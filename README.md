@@ -1,0 +1,12 @@
+#  Study of multiple midleware solutions
+## XMLRPC
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. In eu euismod nisi. Proin finibus, lectus vitae faucibus maximus, elit neque tempor neque, a ultrices metus sem a leo. Phasellus eu magna sit amet arcu tincidunt iaculis. Ut semper feugiat eros, in consequat sem bibendum in. Donec rutrum, sem vel blandit porttitor, nibh quam convallis quam, quis cursus risus mauris non est. Proin feugiat aliquam lectus, non venenatis erat tempus ac. Aliquam erat volutpat. Mauris vitae tortor ut purus auctor scelerisque et vel nisi. Vivamus egestas tempus sapien vel efficitur. Aliquam malesuada et lorem vitae luctus.
+
+## PyRO
+Maecenas non vestibulum nisi, sed rhoncus lacus. Cras ex felis, condimentum a condimentum ut, hendrerit eu nisl. Mauris venenatis elit libero, eget suscipit sapien tempor sit amet. Vivamus leo nibh, hendrerit non leo nec, vehicula venenatis magna. Praesent arcu lorem, maximus in viverra quis, fringilla eget nibh. Vestibulum ornare ligula mi, eget fermentum lacus varius a. Donec nec tincidunt sapien, eu feugiat dolor.
+
+## REDIS
+Nulla efficitur orci pulvinar, placerat est at, volutpat neque. Curabitur mi purus, viverra et fermentum eget, ullamcorper vitae ipsum. Mauris tempor erat id ullamcorper egestas. Nullam lobortis lectus eget leo condimentum sodales. Donec in eros at odio posuere tincidunt a eget risus. In id accumsan nibh. Sed tristique neque quis enim tempor, vitae rutrum nulla auctor. In finibus venenatis purus, iaculis blandit neque ornare ac. Cras id commodo odio. Cras dictum id enim vel dignissim. Mauris volutpat lectus condimentum massa luctus, vitae placerat ligula egestas. Suspendisse ullamcorper maximus nulla, ac pulvinar mauris feugiat ut. Nulla facilisi. Fusce id blandit nunc. Aenean semper consectetur justo venenatis pharetra. Nunc porttitor nisl eget lectus aliquam ultricies.
+
+## RabbitMQ
+Aliquam ut arcu orci. Nulla vulputate tempor maximus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Aenean mattis neque ac ipsum pellentesque vehicula. Aliquam a mauris ut risus malesuada varius ac eget arcu. Morbi ornare non arcu volutpat dictum. Morbi venenatis enim nec metus lacinia, non facilisis nisi sollicitudin. Morbi nec tellus ac justo congue interdum. Curabitur et bibendum nibh. Integer mattis pharetra nulla, quis dignissim massa porta sit amet. Vestibulum vel sollicitudin tortor.
