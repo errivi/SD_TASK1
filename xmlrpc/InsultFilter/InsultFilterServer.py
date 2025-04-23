@@ -1,35 +1,58 @@
 import threading
-from xmlrpc.server import SimpleXMLRPCServer
-from xmlrpc.server import SimpleXMLRPCRequestHandler
+from xmlrpc.server import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
 from xmlrpc.client import ServerProxy
 import random
 import time
-
-insults_set = set()
+import re
 
 # Restrict to a particular path
 class RequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ('/RPC2',)
 
-# Create server
+# client for consuming InsultServer
+insultService = ServerProxy('http://127.0.0.1:9000', allow_none=True)
+# Obtain initial insults list
+insults_set = set(insultService.get())
+
+# list for saving filtered text
+filtered_text_results = []
+
+# update function to get most recent insults list
+def update_insults():
+    global insults_set
+    while True:
+        try:
+            new_insults = set(insultService.get())
+            insults_set = new_insults
+        except Exception as e:
+            print("Error while retrieving recent insults list:", e)
+        time.sleep(5)
+
+# periodic updates thread
+threading.Thread(target=update_insults, daemon=True).start()
+
+# Create InsultFilter service
 with SimpleXMLRPCServer(('localhost', 8000), requestHandler=RequestHandler, allow_none=True) as server:
     server.register_introspection_functions()
 
-    def add_insult(insult):
-        insults_set.add(insult)
-        return True
-    server.register_function(add_insult, 'add')
+    # function that receives,filter, saves and returns the filtered text
+    def filter_text(text):
+        # Order insults by length to avoid partial replacement
+        insults_list = sorted(insults_set, key=len, reverse=True)
+        # check if insults in text
+        pattern = re.compile(r'\b(' + '|'.join(re.escape(word) for word in insults_list) + r')\b', flags=re.IGNORECASE)
+        # replace matching insults with 'CENSORED'
+        filtered_version = pattern.sub("CENSORED", text)
+        # Store and return filtered text
+        filtered_text_results.append(filtered_version)
+        return filtered_version
+    server.register_function(filter_text, 'filter')
 
-    def get_insults():
-        return list(insults_set)
-    server.register_function(get_insults, 'get')
 
-    def insult_me():
-        return random.choice(list(insults_set))
-    server.register_function(insult_me, 'insult')
+    # function that return list of filtered texts
+    def get_filtered_texts():
+        return filtered_text_results
+    server.register_function(get_filtered_texts, 'getFiltered')
 
-
-
-    # Run the server's main loop
-    print("Service server active on http://127.0.0.1:9000")
+    print("Filter service active on http://127.0.0.1:8000")
     server.serve_forever()

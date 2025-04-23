@@ -1,27 +1,22 @@
-import threading
-import time
-from xmlrpc.server import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
-from xmlrpc.client import ServerProxy
-
-#client for consuming InsultFilterServer
-insultFilterServer = ServerProxy('http://127.0.0.1:8000', allow_none=True)
-
-# List available methods
-print("Available methods on InsultFilterServer:", insultFilterServer.system.listMethods())
-
-# Add some insults
-insultFilterServer.add('tonto')
-insultFilterServer.add('cap de suro')
-
-# Obtain random insult
-print("Random insult:", insultFilterServer.insult())
-# Obtain insults list
-print("Insults list:", insultFilterServer.get())
+import xmlrpc.client
 
 
-# Keep running to obtain insults from subscription
-try:
-    while True:
-        time.sleep(1)
-except KeyboardInterrupt:
-    print("Client ended.")
+def main():
+    # create client and connect to InsultFilterServer
+    filter_server = xmlrpc.client.ServerProxy("http://localhost:8000", allow_none=True)
+
+    text_to_filter = "Eres muy tonto"
+
+    # call filter for example text
+    filtered_text = filter_server.filter(text_to_filter)
+    print("Non filtered text:", text_to_filter, "\nFiltered text:", filtered_text)
+
+    # Get all filtered texts on server
+    all_filtered_texts = filter_server.getFiltered()
+    print("\nFiltered text list:")
+    for idx, text in enumerate(all_filtered_texts, start=1):
+        print(f"{idx}. {text}")
+
+
+if __name__ == '__main__':
+    main()

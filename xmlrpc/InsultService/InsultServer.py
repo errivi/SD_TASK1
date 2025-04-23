@@ -49,6 +49,7 @@ with SimpleXMLRPCServer(('localhost', 8000), requestHandler=RequestHandler, allo
                             print(f"Error while sending insult to client {url}: {e}")
             time.sleep(5)
 
+    # periodic updates thread
     threading.Thread(target=broadcaster, daemon=True).start()
     # Run the server's main loop
     print("Service server active on http://127.0.0.1:9000")
