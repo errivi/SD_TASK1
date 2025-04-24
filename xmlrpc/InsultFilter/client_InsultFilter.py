@@ -3,7 +3,7 @@ import xmlrpc.client
 
 def main():
     # create client and connect to InsultFilterServer
-    filter_server = xmlrpc.client.ServerProxy("http://localhost:8000", allow_none=True)
+    filter_server = xmlrpc.client.ServerProxy("http://localhost:8888", allow_none=True)
 
     text_to_filter = "Eres muy tonto"
 

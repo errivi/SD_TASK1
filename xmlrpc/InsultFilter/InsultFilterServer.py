@@ -5,12 +5,15 @@ import random
 import time
 import re
 
+insultServerURL = argv[1]
+filterServerPort = int(argv[2])
+
 # Restrict to a particular path
 class RequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ('/RPC2',)
 
 # client for consuming InsultServer
-insultService = ServerProxy('http://127.0.0.1:9000', allow_none=True)
+insultService = ServerProxy(insultServerURL, allow_none=True)
 # Obtain initial insults list
 insults_set = set(insultService.get())
 
@@ -22,8 +25,7 @@ def update_insults():
     global insults_set
     while True:
         try:
-            new_insults = set(insultService.get())
-            insults_set = new_insults
+            insults_set = set(insultService.get())
         except Exception as e:
             print("Error while retrieving recent insults list:", e)
         time.sleep(5)
@@ -32,7 +34,7 @@ def update_insults():
 threading.Thread(target=update_insults, daemon=True).start()
 
 # Create InsultFilter service
-with SimpleXMLRPCServer(('localhost', 8000), requestHandler=RequestHandler, allow_none=True) as server:
+with SimpleXMLRPCServer(('localhost', filterServerPort), requestHandler=RequestHandler, allow_none=True) as server:
     server.register_introspection_functions()
 
     # function that receives,filter, saves and returns the filtered text
@@ -54,5 +56,5 @@ with SimpleXMLRPCServer(('localhost', 8000), requestHandler=RequestHandler, allo
         return filtered_text_results
     server.register_function(get_filtered_texts, 'getFiltered')
 
-    print("Filter service active on http://127.0.0.1:8000")
+    print("Filter service active on http://127.0.0.1:", filterServerPort)
     server.serve_forever()

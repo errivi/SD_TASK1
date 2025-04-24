@@ -8,13 +8,14 @@ import time
 insults_set = set()
 subscribers_set = set()
 subscribers_lock = threading.Lock()
+insultServerPort = int(argv[1])
 
 # Restrict to a particular path
 class RequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ('/RPC2',)
 
 # Create server
-with SimpleXMLRPCServer(('localhost', 8000), requestHandler=RequestHandler, allow_none=True) as server:
+with SimpleXMLRPCServer(('localhost', int(argv[1])), requestHandler=RequestHandler, allow_none=True) as server:
     server.register_introspection_functions()
 
     def add_insult(insult):
@@ -52,5 +53,5 @@ with SimpleXMLRPCServer(('localhost', 8000), requestHandler=RequestHandler, allo
     # periodic updates thread
     threading.Thread(target=broadcaster, daemon=True).start()
     # Run the server's main loop
-    print("Service server active on http://127.0.0.1:9000")
+    print("Service server active on http://127.0.0.1:",insultServerPort)
     server.serve_forever()
