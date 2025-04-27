@@ -4,6 +4,8 @@ from xmlrpc.server import SimpleXMLRPCRequestHandler
 from xmlrpc.client import ServerProxy
 import random
 import time
+from sys import argv
+
 
 insults_set = set()
 subscribers_set = set()

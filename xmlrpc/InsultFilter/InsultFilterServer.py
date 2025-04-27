@@ -4,6 +4,8 @@ from xmlrpc.client import ServerProxy
 import random
 import time
 import re
+from sys import argv
+
 
 insultServerURL = argv[1]
 filterServerPort = int(argv[2])
@@ -14,7 +16,8 @@ class RequestHandler(SimpleXMLRPCRequestHandler):
 
 # client for consuming InsultServer
 insultService = ServerProxy(insultServerURL, allow_none=True)
-# Obtain initial insults list
+# Obtain initial insults list and print log
+print(f"[Filter@{filterServerPort}] ➔ initial GET {insultServerURL}")
 insults_set = set(insultService.get())
 
 # list for saving filtered text
@@ -25,9 +28,10 @@ def update_insults():
     global insults_set
     while True:
         try:
+            print(f"[Filter@{filterServerPort}] ➔ periodic update GET {insultServerURL}")
             insults_set = set(insultService.get())
         except Exception as e:
-            print("Error while retrieving recent insults list:", e)
+            print(f"[Filter@{filterServerPort}] Error retrieving insults: {e}")
         time.sleep(5)
 
 # periodic updates thread
