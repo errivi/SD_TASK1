@@ -23,10 +23,13 @@ def start_client_server():
 threading.Thread(target=start_client_server, daemon=True).start()
 
 #client for consuming InsultServer
-insultServer = ServerProxy('http://127.0.0.1:8000', allow_none=True)
+insultServer = ServerProxy('http://127.0.0.1:7999', allow_none=True)
 
 # List available methods
 print("Available methods on InsultServer:", insultServer.system.listMethods())
+
+# List insults registered (should be empty)
+print("Server has now this insults: ", insultServer.get())
 
 # Add some insults
 insultServer.add('tonto')

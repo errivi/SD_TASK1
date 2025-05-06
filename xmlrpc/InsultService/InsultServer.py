@@ -1,6 +1,5 @@
 import threading
-from xmlrpc.server import SimpleXMLRPCServer
-from xmlrpc.server import SimpleXMLRPCRequestHandler
+from xmlrpc.server import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
 from xmlrpc.client import ServerProxy
 import random
 import time
@@ -10,7 +9,16 @@ from sys import argv
 insults_set = set()
 subscribers_set = set()
 subscribers_lock = threading.Lock()
+lost_subscribers = {}
 insultServerPort = int(argv[1])
+
+# Method to remove a subscriber not only from the local list, but also from the load balancer's list copy
+def remove_subscriber(subscriber_url):
+    with subscribers_lock:
+        subscribers_set.discard(subscriber_url)
+    LB = ServerProxy('http://127.0.0.1:7999', allow_none=True)
+    LB.unalive(subscriber_url)
+    del LB
 
 # Restrict to a particular path
 class RequestHandler(SimpleXMLRPCRequestHandler):
@@ -37,7 +45,7 @@ with SimpleXMLRPCServer(('localhost', int(argv[1])), requestHandler=RequestHandl
         with subscribers_lock:
             subscribers_set.add(subscriber_url)
         return True
-    server.register_function(subscribe_insults, 'subscribe')
+    server.register_function(subscribe_insults, 'subscribe') 
 
     def broadcaster():
         while True:
@@ -50,6 +58,10 @@ with SimpleXMLRPCServer(('localhost', int(argv[1])), requestHandler=RequestHandl
                             client.receive_insult(insult)
                         except Exception as e:
                             print(f"Error while sending insult to client {url}: {e}")
+                            if url not in lost_subscribers: lost_subscribers[url] = 1
+                            else:
+                                if lost_subscribers[url] > 1: remove_subscriber(url)
+                                else: lost_subscribers[url] = lost_subscribers[url] + 1
             time.sleep(5)
 
     # periodic updates thread

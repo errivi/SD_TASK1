@@ -46,7 +46,10 @@ class InsultNode:
         _InsultNodeList.append(self)
     
     def append_sub(self, subscriber_url):
-        self.subs.append(subscriber_url)
+        self.subs.add(subscriber_url)
+    
+    def remove_sub(self, subscriber_url):
+        self.subs.discard(subscriber_url)
     
     def get_subs(self):
         return self.subs
@@ -60,6 +63,7 @@ class InsultNode:
         return self.avg_request_ttc
 
     def get_global_avg():
+        avg = 0
         for node in _InsultNodeList:
             avg += node.get_avg()
         return avg / len(_InsultNodeList)
@@ -77,7 +81,7 @@ def spawn_insult_node():
     return InsultNode(port)
 
 # Spawn a filter node linked to a specific insult node
-def spawn_filter_node():
+def spawn_filter_node(): #DEBUG|
     port = BASE_FILTER_SERVER_PORT + len(_FilterNodeList)
     insult_url = f"http://{LOAD_BALANCER_IP}:{LOAD_BALANCER_PORT}"
     subprocess.Popen([sys.executable, 'InsultFilter/InsultFilterServer.py', insult_url, str(port)])
@@ -88,12 +92,12 @@ def initialize_nodes():
     if OPERATION_MODE in (0, 2):
         # single-node or dynamic: start one of each
         spawn_insult_node()
-        spawn_filter_node()
+        #DEBUG|spawn_filter_node()
     elif OPERATION_MODE == 1:
         # multiple static: start fixed number of pairs
         for i in range(NODES_FOR_MULTIPLE_STATIC):
             spawn_insult_node()
-            spawn_filter_node()
+            #DEBUG|spawn_filter_node()
     else:
         print('Invalid OPERATION_MODE (0, 1, 2)')
         sys.exit(-1)
@@ -123,6 +127,7 @@ def get_filter_node():
 
 # If multiple-node dynamic mode specified, this method makes number of nodes scale every SECONDS_BETWEEN_SCALING seconds
 def dynamic_scaler():
+    global _new_requests, _last_request_count, _request_rate, _avg_request_ttc
     while True:
         _request_rate = _new_requests / _last_request_count
         _new_requests = 0
@@ -133,8 +138,8 @@ def dynamic_scaler():
         if nodes_delta > 0:
             for i in range(nodes_delta):
                 spawn_insult_node()
-                spawn_filter_node()
-        elif nodes_delta < 0:
+                #DEBUG|spawn_filter_node()
+        elif nodes_delta < -1:
             kill_tries = 0
             while nodes_delta < 0 and kill_tries < MAX_KILL_TRIES:
                 node = get_insult_node()
@@ -145,6 +150,21 @@ def dynamic_scaler():
                         subscribe_insults(sub)
                     node = None
                 kill_tries += 1
+        time.sleep(SECONDS_BETWEEN_SCALING)
+
+def metrics():
+    global _new_requests, _last_request_count, _request_rate, _avg_request_ttc
+    while True:
+        _request_rate = _new_requests / _last_request_count
+        _new_requests = 0
+        _last_request_count = time.time()
+        _avg_request_ttc = InsultNode.get_global_avg()
+        needed_nodes = math.ceil(int((_request_rate * _avg_request_ttc) / SINGLE_NODE_CAPACITY))
+        nodes_delta = needed_nodes - len(_InsultNodeList)
+        print("------------ Metrics ------------")
+        print("Avg request TTC: ", _avg_request_ttc, "s")
+        print("Request rate: ", _request_rate, "req/s")
+        print("Necessary nodes: ", nodes_delta, " nodes")
         time.sleep(SECONDS_BETWEEN_SCALING)
 
 # Start initial nodes
@@ -160,34 +180,37 @@ typical_target = (LOAD_BALANCER_IP, LOAD_BALANCER_PORT)
 with SimpleXMLRPCServer(typical_target, requestHandler=RequestHandler, allow_none=True) as server:
     server.register_introspection_functions()
 
-    def proxy_to_insult(func, attr=None):
-        _new_requests += 1
+    def proxy_to_insult(funcName:str, attr=None):
+        global _new_requests
+        _new_requests = _new_requests + 1
         node = get_insult_node()
         node.working = True
         delta = time.time()
         try:
             url = f"http://{BASE_SERVER_HOST}:{node.port}"
             client = ServerProxy(url, allow_none=True)
-            if attr is not None: return client.func(attr)
-            else: return client.func()
+            func = getattr(client, funcName)
+            if attr is not None: return func(attr)
+            else: return func()
         finally:
             node.working = False
             node.register_request(time.time() - delta)
 
     def add_insult(insult):
-        proxy_to_insult(add, insult) # type: ignore
+        return proxy_to_insult("add", insult)
     server.register_function(add_insult, 'add')
 
     def get_insults():
-        proxy_to_insult(get) # type: ignore
+        return proxy_to_insult("get")
     server.register_function(get_insults, 'get')
 
     def insult_me():
-        proxy_to_insult(insult) # type: ignore
+        return proxy_to_insult("insult")
     server.register_function(insult_me, 'insult')
 
     def subscribe_insults(subscriber_url):
-        _new_requests += 1
+        global _new_requests
+        _new_requests = _new_requests + 1
         delta = time.time()
         node = get_node_to_sub()
         url = f"http://{BASE_SERVER_HOST}:{node.port}"
@@ -197,6 +220,14 @@ with SimpleXMLRPCServer(typical_target, requestHandler=RequestHandler, allow_non
         node.register_request(time.time() - delta)
     server.register_function(subscribe_insults, 'subscribe')
 
+    def delete_subscriber(node_port, subscriber_url):
+        try:
+            _InsultNodeList[node_port - BASE_INSULT_SERVER_PORT].remove_sub(subscriber_url)
+        except Exception:
+            print("Faulty request to delete subscriber from InsultNode with port ", node_port)
+    server.register_function(delete_subscriber, 'unalive')
+
     print(f"Load balancer active on http://{LOAD_BALANCER_IP}:{LOAD_BALANCER_PORT}")
-    threading.Thread(target=dynamic_scaler, daemon=True).start()
+    if OPERATION_MODE == 3: threading.Thread(target=dynamic_scaler, daemon=True).start()
+    threading.Thread(target=metrics, daemon=True).start()
     server.serve_forever()
