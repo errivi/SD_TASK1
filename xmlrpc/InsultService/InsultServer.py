@@ -25,7 +25,7 @@ class RequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ('/RPC2',)
 
 # Create server
-with SimpleXMLRPCServer(('localhost', int(argv[1])), requestHandler=RequestHandler, allow_none=True) as server:
+with SimpleXMLRPCServer(('localhost', int(argv[1])), requestHandler=RequestHandler, allow_none=True, logRequests=False) as server:
     server.register_introspection_functions()
 
     def add_insult(insult):
@@ -38,7 +38,8 @@ with SimpleXMLRPCServer(('localhost', int(argv[1])), requestHandler=RequestHandl
     server.register_function(get_insults, 'get')
 
     def insult_me():
-        return random.choice(list(insults_set))
+        if len(insults_set) == 0: return "NoInsultsSaved"
+        else: return random.choice(list(insults_set))
     server.register_function(insult_me, 'insult')
 
     def subscribe_insults(subscriber_url):

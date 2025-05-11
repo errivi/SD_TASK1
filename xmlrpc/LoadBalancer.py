@@ -12,6 +12,9 @@ import threading
 #   2: multiple-node dynamic
 OPERATION_MODE = int(sys.argv[1])
 NODES_FOR_MULTIPLE_STATIC = int(sys.argv[2]) if len(sys.argv) > 2 else 2
+SINGLE_MODE = 0
+MULT_STATIC_MODE = 1
+MULT_DYN_MODE = 2
 
 LOAD_BALANCER_PORT = 7999
 LOAD_BALANCER_IP = "127.0.0.1"
@@ -22,7 +25,7 @@ BASE_FILTER_SERVER_PORT = 29000
 # Dynamic scaling factors
 SINGLE_NODE_CAPACITY = 100
 MAX_KILL_TRIES = 15
-SECONDS_BETWEEN_SCALING = 5
+SECONDS_BETWEEN_SCALING = 1
 _avg_request_ttc = 0.05
 _request_rate = 100
 _last_request_count = time.time()
@@ -89,11 +92,11 @@ def spawn_filter_node(): #DEBUG|
 
 # Initialize nodes based on the selected mode
 def initialize_nodes():
-    if OPERATION_MODE in (0, 2):
+    if OPERATION_MODE in (SINGLE_MODE, MULT_DYN_MODE):
         # single-node or dynamic: start one of each
         spawn_insult_node()
         #DEBUG|spawn_filter_node()
-    elif OPERATION_MODE == 1:
+    elif OPERATION_MODE == MULT_STATIC_MODE:
         # multiple static: start fixed number of pairs
         for i in range(NODES_FOR_MULTIPLE_STATIC):
             spawn_insult_node()
@@ -113,7 +116,7 @@ def get_node_to_sub():
 def get_insult_node():
     global _RR_insult_index
     node = _InsultNodeList[_RR_insult_index]
-    if OPERATION_MODE == 2 or OPERATION_MODE == 3:
+    if OPERATION_MODE in (MULT_STATIC_MODE, MULT_DYN_MODE):
         _RR_insult_index = (_RR_insult_index + 1) % len(_InsultNodeList)
     return node
 
@@ -121,7 +124,7 @@ def get_insult_node():
 def get_filter_node():
     global _RR_filter_index
     node = _FilterNodeList[_RR_filter_index]
-    if OPERATION_MODE == 2 or OPERATION_MODE == 3:
+    if OPERATION_MODE in (MULT_STATIC_MODE, MULT_DYN_MODE):
         _RR_filter_index = (_RR_filter_index + 1) % len(_FilterNodeList)
     return node
 
@@ -155,16 +158,18 @@ def dynamic_scaler():
 def metrics():
     global _new_requests, _last_request_count, _request_rate, _avg_request_ttc
     while True:
-        _request_rate = _new_requests / _last_request_count
+        _request_rate = _new_requests / (time.time() - _last_request_count)
         _new_requests = 0
-        _last_request_count = time.time()
         _avg_request_ttc = InsultNode.get_global_avg()
         needed_nodes = math.ceil(int((_request_rate * _avg_request_ttc) / SINGLE_NODE_CAPACITY))
         nodes_delta = needed_nodes - len(_InsultNodeList)
+        print()
+        print(time.time())
         print("------------ Metrics ------------")
         print("Avg request TTC: ", _avg_request_ttc, "s")
         print("Request rate: ", _request_rate, "req/s")
         print("Necessary nodes: ", nodes_delta, " nodes")
+        _last_request_count = time.time()
         time.sleep(SECONDS_BETWEEN_SCALING)
 
 # Start initial nodes
@@ -177,7 +182,7 @@ class RequestHandler(SimpleXMLRPCRequestHandler):
 
 # Launch the XML-RPC load balancer
 typical_target = (LOAD_BALANCER_IP, LOAD_BALANCER_PORT)
-with SimpleXMLRPCServer(typical_target, requestHandler=RequestHandler, allow_none=True) as server:
+with SimpleXMLRPCServer(typical_target, requestHandler=RequestHandler, allow_none=True, logRequests=False) as server:
     server.register_introspection_functions()
 
     def proxy_to_insult(funcName:str, attr=None):
@@ -228,6 +233,6 @@ with SimpleXMLRPCServer(typical_target, requestHandler=RequestHandler, allow_non
     server.register_function(delete_subscriber, 'unalive')
 
     print(f"Load balancer active on http://{LOAD_BALANCER_IP}:{LOAD_BALANCER_PORT}")
-    if OPERATION_MODE == 3: threading.Thread(target=dynamic_scaler, daemon=True).start()
+    if OPERATION_MODE == MULT_DYN_MODE: threading.Thread(target=dynamic_scaler, daemon=True).start()
     threading.Thread(target=metrics, daemon=True).start()
     server.serve_forever()
