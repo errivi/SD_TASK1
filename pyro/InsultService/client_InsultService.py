@@ -1,65 +1,66 @@
-import sys
-import threading
 import time
+import random
+import multiprocessing
 import Pyro4
-from xmlrpc.client import ServerProxy
 
-insult_server_uri = sys.argv[1]
-callback_port = int(sys.argv[2])
+_workers = []
+_NUM_GOBLINS = 1
 
-# Callback handler
+# URI format: PYRO:insultService@hostname:port
+BASE_URI = "PYRO:insultService@localhost:7999"
+
+insults = [
+    "clown", "blockhead", "dimwit", "nincompoop", "simpleton",
+    "dullard", "buffoon", "nitwit", "half-wit", "scatterbrain",
+    "scatterbrained", "knucklehead", "dingbat", "doofus", "ninny",
+    "ignoramus", "muttonhead", "bonehead", "airhead", "puddingbrain",
+    "mushbrain", "dunderhead", "lamebrain", "numbskull", "fool",
+    "goofball", "lunkhead", "maroon", "mook", "ninnyhammer",
+    "numskull", "patzer", "sap", "scofflaw", "screwball",
+    "twit", "woozle", "yahoo", "zany"
+]
+
 @Pyro4.expose
-class CallbackHandler(object):
-    def receive_insult(self, insult):
-        print("New insult received:", insult)
-        return True
+class LoadTester:
+    def __init__(self, uri, goblin_id):
+        self.victim = Pyro4.Proxy(uri)
+        self.goblin_id = goblin_id
 
-# Start callback server
-def start_callback_server():
-    daemon = Pyro4.Daemon(host="localhost", port=callback_port)
-    uri = daemon.register(CallbackHandler)
-    try:
-        ns = Pyro4.locateNS()
-        ns.register(f"example.callback_{callback_port}", uri)
-    except NamingError:
-        pass
-    print(f"Callback server listening at {uri}")
-    daemon.requestLoop()
-
-# Main client logic
-def main():
-    # Launch callback server in background
-    threading.Thread(target=start_callback_server, daemon=True).start()
-    time.sleep(1)  # wait for callback server up
-
-    # Connect to InsultServer
-    server = Pyro4.Proxy(insult_server_uri)
-
-    # List available methods
-    print("Methods on InsultServer:", server._pyroMethods)
-
-    # Add insults
-    server.add('tonto')
-    server.add('cap de suro')
-
-    # Get a random insult
-    print("Random insult:", server.insult())
-
-    # Get all insults
-    print("Insults list:", server.get())
-
-    # Subscribe to callbacks
-    # Construct own URI
-    callback_uri = f"PYRO:example.callback_{callback_port}@localhost:{callback_port}"
-    server.subscribe(callback_uri)
-    print("Subscribed with callback URI:", callback_uri)
-
-    # Keep running to receive insults
-    try:
+    def run(self):
         while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Client shutting down.")
+            op = random.choice(["add", "get", "insult"])
+            start = time.time()
+            if op == "add":
+                self.victim.add(random.choice(insults))
+            elif op == "get":
+                self.victim.get()
+            else:
+                self.victim.insult()
+            latency = time.time() - start
+            print(f"[Goblin {self.goblin_id}] {op} took {latency:.4f}s")
+
+
+def spawn_goblins():
+    for i in range(_NUM_GOBLINS):
+        tester = LoadTester(BASE_URI, i)
+        p = multiprocessing.Process(target=tester.run)
+        _workers.append(p)
+        p.start()
+
+
+def kill_goblins():
+    for p in _workers:
+        if p.is_alive():
+            p.terminate()
+
+
+def fload_server(duration=3):
+    spawn_goblins()
+    time.sleep(duration)
+    kill_goblins()
+
 
 if __name__ == '__main__':
-    main()
+    # Inicia el Name Server si lo necesitas:
+    # Pyro4.naming.startNSloop()
+    fload_server()
