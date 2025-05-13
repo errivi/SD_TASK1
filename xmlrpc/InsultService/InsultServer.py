@@ -3,29 +3,40 @@ from xmlrpc.server import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
 from xmlrpc.client import ServerProxy
 import random
 import time
-from sys import argv
+import sys
 
 
 insults_set = set()
 subscribers_set = set()
 subscribers_lock = threading.Lock()
 lost_subscribers = {}
-insultServerPort = int(argv[1])
+
+if len(sys.argv) > 1: insultServerPort = int(sys.argv[1])
+else: insultServerPort = 8000
+addr_to_deploy = ('127.0.0.1', insultServerPort)
+load_balancer_uri = 'http://127.0.0.1:7999'
+
 
 # Method to remove a subscriber not only from the local list, but also from the load balancer's list copy
 def remove_subscriber(subscriber_url):
     with subscribers_lock:
         subscribers_set.discard(subscriber_url)
-    LB = ServerProxy('http://127.0.0.1:7999', allow_none=True)
-    LB.unalive(subscriber_url)
-    del LB
+    try:
+        LB = ServerProxy(load_balancer_uri, allow_none=True)
+        LB.unalive(subscriber_url)
+        del LB
+    except:
+        pass
 
 # Restrict to a particular path
 class RequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ('/RPC2',)
 
 # Create server
-with SimpleXMLRPCServer(('localhost', int(argv[1])), requestHandler=RequestHandler, allow_none=True, logRequests=False) as server:
+with SimpleXMLRPCServer(addr_to_deploy,
+                        requestHandler=RequestHandler,
+                        allow_none=True,
+                        logRequests=False) as server:
     server.register_introspection_functions()
 
     def add_insult(insult):
@@ -48,8 +59,8 @@ with SimpleXMLRPCServer(('localhost', int(argv[1])), requestHandler=RequestHandl
         return True
     server.register_function(subscribe_insults, 'subscribe') 
 
-    def broadcaster():
-        while True:
+    def broadcaster(thread_abort_flag:threading.Event):
+        while not thread_abort_flag.is_set():
             if insults_set and subscribers_set:
                 insult = random.choice(list(insults_set))
                 with subscribers_lock:
@@ -63,10 +74,17 @@ with SimpleXMLRPCServer(('localhost', int(argv[1])), requestHandler=RequestHandl
                             else:
                                 if lost_subscribers[url] > 1: remove_subscriber(url)
                                 else: lost_subscribers[url] = lost_subscribers[url] + 1
-            time.sleep(5)
+            thread_abort_flag.wait(timeout=5)
 
     # periodic updates thread
-    threading.Thread(target=broadcaster, daemon=True).start()
+    thread_abort_flag = threading.Event()
+    threading.Thread(target=broadcaster,args=(thread_abort_flag,) ,  daemon=True).start()
     # Run the server's main loop
-    print("Service server active on http://127.0.0.1:",insultServerPort)
-    server.serve_forever()
+    print("Service server active on ", addr_to_deploy)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Ending broadcast thread for subscribers...")
+        thread_abort_flag.set()
+        while threading.active_count() > 1: time.sleep(1)
+        sys.exit(0)
