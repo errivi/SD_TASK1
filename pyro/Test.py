@@ -45,7 +45,7 @@ def spawn_insult_node():
 
 # Spawn a filter node linked to a specific insult node
 def spawn_filter_node():
-    port = BASE_FILTER_PORT + len(_filter_nodes)
+    port = BASE_FILTER_SERVER_PORT + len(_FilterNodeList)
     insult_uri = f"PYRO:example.InsultServer@{BASE_HOST}:{BASE_INSULT_SERVER_PORT}"
     subprocess.Popen([sys.executable,'InsultFilter/InsultFilterServer.py',insult_uri,str(port)])
     return FilterNode(port)
@@ -55,15 +55,15 @@ def get_insult_node():
     global _RR_insult_index
     node = _InsultNodeList[_RR_insult_index]
     if len(_InsultNodeList) > 1:
-        _rr_insult = (_RR_insult_index + 1) % len(_InsultNodeList)
+        _RR_insult_index = (_RR_insult_index + 1) % len(_InsultNodeList)
     return node
 
 # Round-robin or statis selection for filter nodes
 def get_filter_node():
     global _RR_filter_index
-    node = _filter_nodes[_RR_filter_index_filter]
+    node = _FilterNodeList[_RR_filter_index_filter]
     if len(_FilterNodeList) > 1:
-        _rr_filter = (_RR_filter_index + 1) % len(_FilterNodeList)
+        _RR_filter_index = (_RR_filter_index + 1) % len(_FilterNodeList)
     return node
 
 # Fill the server with insults for the test
@@ -170,7 +170,7 @@ def floadFilterServer(uri):
         "Zany as always, but not in a good way.",
     ]
     for _ in range(REQS_PER_WORKER):
-        proxy.filter(random.choice(phrases))
+        proxy.filter_text(random.choice(phrases))
 
 # Spawn workers passing the function, not calling it
 def spawnWorkers(ports, func):

@@ -13,11 +13,11 @@ def main():
 
     try:
         # Call the remote filter method
-        filtered_text = proxy.filter(text_to_filter)
+        filtered_text = proxy.filter_text(text_to_filter)
         print("Non filtered text:", text_to_filter, "\nFiltered text:", filtered_text)
 
         # Get all filtered texts on serverr
-        all_filtered_texts = proxy.getFiltered()
+        all_filtered_texts = proxy.get_filtered_texts()
         print("\nFiltered text list:")
         for idx, item in enumerate(all_filtered_texts, start=1):
             print(f"{idx}. {item}")

@@ -31,11 +31,11 @@ class LoadTester:
             op = random.choice(["add", "get", "insult"])
             start = time.time()
             if op == "add":
-                self.victim.add(random.choice(insults))
+                self.victim.add_insult(random.choice(insults))
             elif op == "get":
-                self.victim.get()
+                self.victim.get_insults()
             else:
-                self.victim.insult()
+                self.victim.insult_me()
             latency = time.time() - start
             print(f"[Goblin {self.goblin_id}] {op} took {latency:.4f}s")
 

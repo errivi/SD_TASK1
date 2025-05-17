@@ -1,72 +1,65 @@
-#!/usr/bin/env python3
 import sys
 import threading
 import time
 import re
 import Pyro4
 
+# Server parameters
+_INSULT_LIST_TTL = 5 * 60  # 5 minutes
 
-insult_server_uri = sys.argv[1]
-filter_server_port = int(sys.argv[2])
+if len(sys.argv) < 3:
+    print("Using default values")
+    insult_server_uri = f"PYRO:example.InsultServer@127.0.0.1:8000"
+    filter_port = 9000
+else:
+    insult_server_uri = sys.argv[1]
+    filter_port = int(sys.argv[2])
 
-# Create Pyro4 proxy to consume InsultServer
-insult_service = Pyro4.Proxy(insult_server_uri)
-# Obtain initial insults list
-print(f"[Filter@{filter_server_port}] ➔ initial GET {insult_server_uri}")
-insults_set = set(insult_service.get())
-
-# List for saving filtered text
-filtered_text_results = []
-
-# Function to periodically update insults set
-def update_insults():
-    global insults_set
-    while True:
-        try:
-            print(f"[Filter@{filter_server_port}] ➔ periodic update GET {insult_server_uri}")
-            insults_set = set(insult_service.get())
-        except Exception as e:
-            print(f"[Filter@{filter_server_port}] Error retrieving insults list: {e}")
-        time.sleep(5)
-
-# periodic updates thread
-threading.Thread(target=update_insults, daemon=True).start()
 
 @Pyro4.expose
 @Pyro4.behavior(instance_mode="single")
-class InsultFilter(object):
+class InsultFilterServer:
+    def __init__(self, insult_uri):
+        self.insult_uri = insult_uri
+        self.pattern = re.compile("$")  # dummy
+        self.results = []
+        self.abort_flag = threading.Event()
+        threading.Thread(target=self.update_insults, daemon=True).start()
+
+    def update_insults(self):
+        while not self.abort_flag.is_set():
+            try:
+                proxy = Pyro4.Proxy(self.insult_uri)
+                print(f"[Filter @{self.insult_uri}] actualizando…")
+                insults = proxy.get_insults()
+                sorted_insults = sorted(insults, key=len, reverse=True)
+                escaped = [re.escape(w) for w in sorted_insults]
+                self.pattern = re.compile(r"\b(" + "|".join(escaped) + r")\b", flags=re.IGNORECASE)
+            except Exception as e:
+                print(f"[Filter@{self.insult_uri}] Error retrieving insults: {e}]")
+            self.abort_flag.wait(timeout=_INSULT_LIST_TTL)
 
     def filter_text(self, text):
-        # Order insults by length to avoid partial replacements
-        insults_list = sorted(insults_set, key=len, reverse=True)
-        # check if insults in text
-        pattern = re.compile(r'\b(' + '|'.join(re.escape(word) for word in insults_list) + r')\b',flags=re.IGNORECASE)
-        # replace matching insults with 'CENSORED'
-        filtered_version = pattern.sub('CENSORED', text)
-        # Store and return filtered text
-        filtered_text_results.append(filtered_version)
-        return filtered_version
+        filtered = self.pattern.sub("CENSORED", text)
+        self.results.append(filtered)
+        return filtered
 
     def get_filtered_texts(self):
-        return filtered_text_results
-
-
-def main():
-    # Initialize Pyro4 Daemon
-    daemon = Pyro4.Daemon(host="localhost", port=filter_server_port)
-    try:
-        # Try to register with Name Server
-        ns = Pyro4.locateNS()
-        uri = daemon.register(InsultFilter)
-        ns.register("example.InsultFilter", uri)
-        print(f"InsultFilter registered as 'example.InsultFilter' at {uri}")
-    except Pyro4.errors.NamingError:
-        # Name server not found, register anonymously
-        uri = daemon.register(InsultFilter, objectId="example.InsultFilter")
-        print(f"InsultFilter service available at {uri}")
-
-    print(f"Filter service listening on port {filter_server_port}")
-    daemon.requestLoop()
+        return list(self.results)
 
 if __name__ == '__main__':
-    main()
+    daemon = Pyro4.Daemon(host="127.0.0.1", port=filter_port)
+    try:
+        ns = Pyro4.locateNS()
+        uri = daemon.register(InsultFilterServer(insult_server_uri))
+        ns.register("example.InsultFilterServer", uri)
+    except Pyro4.errors.NamingError:
+        uri = daemon.register(InsultFilterServer(insult_server_uri), objectId="example.InsultFilterServer")
+    print(f"FilterServer listening on port {filter_port} -> {uri}")
+    try:
+        daemon.requestLoop()
+    except KeyboardInterrupt:
+        print("Ending broadcast thread for subscribers...")
+        InsultFilterServer.abort_flag.set()
+        daemon.shutdown()
+        sys.exit(0)
