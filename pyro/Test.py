@@ -1,19 +1,18 @@
-from xmlrpc.client import ServerProxy
-import subprocess
 import sys
+import subprocess
 import time
-import multiprocessing as mp
 import random
+import multiprocessing as mp
+import Pyro4
 
-NUM_OF_NODES = int(sys.argv[1]) if int(sys.argv[1]) > 1 else 1
+NUM_OF_NODES = int(sys.argv[1]) if len(sys.argv) > 1 and int(sys.argv[1]) > 1 else 1
 
-LOAD_BALANCER_PORT = 7999
-LOAD_BALANCER_IP = "127.0.0.1"
-BASE_SERVER_HOST = "127.0.0.1"
+LOAD_BALANCER_NS = "PYRONAME:LoadBalancer"
+BASE_HOST = "127.0.0.1"
 BASE_INSULT_SERVER_PORT = 8000
 BASE_FILTER_SERVER_PORT = 9000
 
-# Global lists of nodes
+# Global lists of nodesListas globales de nodos
 _InsultNodeList = []
 _FilterNodeList = []
 _RR_insult_index = 0
@@ -22,9 +21,9 @@ _RR_filter_index = 0
 _workers = []
 
 # Test configurations
-TOTAL_NUM_REQS = 200_000
-NUM_OF_WORKERS = 8
-REQS_PER_WORKER = int(TOTAL_NUM_REQS / (NUM_OF_NODES * NUM_OF_WORKERS))
+TOTAL_REQS = 200_000
+NUM_WORKERS = 8
+REQS_PER_WORKER = int(TOTAL_REQS // (NUM_OF_NODES * NUM_WORKERS))
 
 class InsultNode:
     def __init__(self, port):
@@ -41,46 +40,48 @@ class FilterNode:
 # Spawn an insult node on next available port
 def spawn_insult_node():
     port = BASE_INSULT_SERVER_PORT + len(_InsultNodeList)
-    subprocess.Popen([sys.executable, 'InsultService/InsultServer.py', str(port)])
+    subprocess.Popen([sys.executable,'InsultService/InsultServer.py',str(port)])
     return InsultNode(port)
 
 # Spawn a filter node linked to a specific insult node
-def spawn_filter_node(): 
-    port = BASE_FILTER_SERVER_PORT + len(_FilterNodeList)
-    insult_url = f"http://{BASE_SERVER_HOST}:{BASE_INSULT_SERVER_PORT}"
-    subprocess.Popen([sys.executable, 'InsultFilter/InsultFilterServer.py', insult_url, str(port)])
+def spawn_filter_node():
+    port = BASE_FILTER_PORT + len(_filter_nodes)
+    insult_uri = f"PYRO:example.InsultServer@{BASE_HOST}:{BASE_INSULT_SERVER_PORT}"
+    subprocess.Popen([sys.executable,'InsultFilter/InsultFilterServer.py',insult_uri,str(port)])
     return FilterNode(port)
 
-# Initialize nodes based on the selected mode
-def initialize_nodes():
-    for _ in range(NUM_OF_NODES):
-        spawn_insult_node()
-        spawn_filter_node()
-
-# Round-robin or static selection for insult nodes
+# SRound-robin or static selection for insult nodes
 def get_insult_node():
     global _RR_insult_index
     node = _InsultNodeList[_RR_insult_index]
     if len(_InsultNodeList) > 1:
-        _RR_insult_index = (_RR_insult_index + 1) % len(_InsultNodeList)
+        _rr_insult = (_RR_insult_index + 1) % len(_InsultNodeList)
     return node
 
-# Round-robin or static selection for filter nodes
+# Round-robin or statis selection for filter nodes
 def get_filter_node():
     global _RR_filter_index
-    node = _FilterNodeList[_RR_filter_index]
+    node = _filter_nodes[_RR_filter_index_filter]
     if len(_FilterNodeList) > 1:
-        _RR_filter_index = (_RR_filter_index + 1) % len(_FilterNodeList)
+        _rr_filter = (_RR_filter_index + 1) % len(_FilterNodeList)
     return node
 
 # Fill the server with insults for the test
-def fillServerWithInsults(url):
+def fillServerWithInsults(uri):
     insults = ["clown", "blockhead", "dimwit", "nincompoop", "simpleton", "dullard", "buffoon", "nitwit", "half-wit", "scatterbrain", "scatterbrained", "knucklehead", "dingbat", "doofus", "ninny", "ignoramus", "muttonhead", "bonehead", "airhead", "puddingbrain", "mushbrain", "blockhead", "dunderhead", "lamebrain", "muttonhead", "numbskull", "dimwit", "dullard", "fool", "goofball", "knucklehead", "lunkhead", "maroon", "mook", "nincompoop", "ninnyhammer", "numskull", "patzer", "puddingbrain", "sap", "simpleton", "scofflaw", "screwball", "twit", "woozle", "yahoo", "zany"]
-    server = ServerProxy(url, allow_none=True)
+    proxy = Pyro4.Proxy(uri)
     for ins in insults:
-        server.add(ins)
+        proxy.add_insult(ins)
 
-def floadFilterServer(url):
+# Función de carga para InsultService
+def floadInsultServer(uri):
+    proxy = Pyro4.Proxy(uri)
+    for _ in range(REQS_PER_WORKER):
+        proxy.insult_me()
+
+# Función de carga para InsultFilterService
+def floadFilterServer(uri):
+    proxy = Pyro4.Proxy(uri)
     phrases = [
         "You're such a clown, always acting the fool.",
         "Honestly, you're a blockhead who can't catch a break.",
@@ -168,49 +169,50 @@ def floadFilterServer(url):
         "Zany times with you—though mostly just bizarre and confusing.",
         "Zany as always, but not in a good way.",
     ]
-    victim = ServerProxy(url, allow_none=True)
     for _ in range(REQS_PER_WORKER):
-        victim.filter(random.choice(phrases))
+        proxy.filter(random.choice(phrases))
 
-def floadInsultServer(url):
-    victim = ServerProxy(url, allow_none=True)
-    for _ in range(REQS_PER_WORKER):
-        victim.insult()
-
-def spawnWorkers(ports, num, work):
+# Spawn workers passing the function, not calling it
+def spawnWorkers(ports, func):
     for port in ports:
-        dir = f'http://127.0.0.1:{port}'
-        for _ in range(num):
-            p = mp.Process(target=work, args=(dir,))
+        # Determinar URI según función
+        if func is floadInsultServer:
+            uri = f"PYRO:example.InsultServer@{BASE_HOST}:{port}"
+        else:
+            uri = f"PYRO:example.InsultFilterServer@{BASE_HOST}:{port}"
+        for _ in range(NUM_WORKERS):
+            p = mp.Process(target=func, args=(uri,))
             _workers.append(p)
             p.start()
 
+# Wait for all workers
 def waitForWorkers():
-    for w in _workers:
-        w.join()
+    for p in _workers:
+        p.join()
 
-if __name__=='__main__':
+if __name__ == '__main__':
     # Start initial service nodes
     print("Spawning all the nodes...")
-    #initialize_nodes()
     for _ in range(NUM_OF_NODES): spawn_insult_node()
     time.sleep(2)
 
     # Testing InsultService
     print("Filling the servers with insults...")
-    for node in _InsultNodeList: fillServerWithInsults(f'http://127.0.0.1:{node.port}')
+    for node in _InsultNodeList:
+        uri = f"PYRO:example.InsultServer@{BASE_HOST}:{node.port}"
+        fillServerWithInsults(uri)
 
     print("Starting Insult test... (making every worker do ", REQS_PER_WORKER, " reqs)")
     listOfPorts = []
     for node in _InsultNodeList: listOfPorts.append(node.port)
 
     delta = time.time()
-    spawnWorkers(listOfPorts, NUM_OF_WORKERS, floadInsultServer)
+    spawnWorkers(listOfPorts, floadInsultServer)
     waitForWorkers()
     delta = time.time() - delta
 
     print("Test finished.")
-    reqs = len(listOfPorts)*NUM_OF_WORKERS*REQS_PER_WORKER
+    reqs = len(listOfPorts) * NUM_WORKERS * REQS_PER_WORKER
     print("RES: Made ", reqs, " reqs in ", delta, " secs. Got ", (reqs/delta), " reqs/s")
 
     # Spawning initial filter nodes
@@ -223,15 +225,16 @@ if __name__=='__main__':
     for node in _FilterNodeList: listOfPorts.append(node.port)
 
     delta = time.time()
-    spawnWorkers(listOfPorts, NUM_OF_WORKERS, floadFilterServer)
+    spawnWorkers(listOfPorts, floadFilterServer)
     waitForWorkers()
     delta = time.time() - delta
 
     print("Test finished.")
-    reqs = len(listOfPorts)*NUM_OF_WORKERS*REQS_PER_WORKER
+    reqs = len(listOfPorts) * NUM_WORKERS * REQS_PER_WORKER
     print("RES: Made ", reqs, " reqs in ", delta, " secs. Got ", (reqs/delta), " reqs/s")
 
     # Kill everything
     print("Stopping all nodes...")
-    for thread in _workers: thread.kill()
+    for p in _workers:
+        p.terminate()
     sys.exit(0)
