@@ -21,7 +21,7 @@ class InsultServer:
         self.lost_subscribers = {}
         self.lock = threading.Lock()
         self.abort_flag = threading.Event()
-        # Arranca hilo de broadcast
+        # Start broadcast thread
         threading.Thread(target=self._broadcaster, daemon=True).start()
 
     def add_insult(self, insult):
@@ -67,22 +67,22 @@ class InsultServer:
                                 self._remove_subscriber(uri)
 
 if __name__ == '__main__':
-    # Inicia Pyro daemon y registra el objeto
+    # Init Pyro daemon & register object
     daemon = Pyro4.Daemon(host=BASE_HOST, port=insultServerPort)
     try:
         ns = Pyro4.locateNS()
         uri = daemon.register(InsultServer)
         ns.register("example.InsultServer", uri)
-        print(f"InsultServer registrado en ns como example.InsultServer -> {uri}")
+        print(f"InsultServer registered in ns as example.InsultServer -> {uri}")
     except Pyro4.errors.NamingError:
         uri = daemon.register(InsultServer, objectId="example.InsultServer")
-        print(f"InsultServer disponible en {uri}")
+        print(f"InsultServer available at {uri}")
 
-    print(f"InsultServer escuchando en {BASE_HOST}:{insultServerPort}")
+    print(f"InsultServer listening on {BASE_HOST}:{insultServerPort}")
     try:
         daemon.requestLoop()
     except KeyboardInterrupt:
-        print("Deteniendo broadcaster y saliendo...")
+        print("Stopping broadcaster & exiting...")
         server = daemon.objectsById.get("example.InsultServer")
         if server:
             server.abort_flag.set()

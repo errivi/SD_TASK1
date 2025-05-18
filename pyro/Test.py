@@ -12,7 +12,7 @@ BASE_HOST = "127.0.0.1"
 BASE_INSULT_SERVER_PORT = 8000
 BASE_FILTER_SERVER_PORT = 9000
 
-# Global lists of nodesListas globales de nodos
+# Global lists of nodes
 _InsultNodeList = []
 _FilterNodeList = []
 _RR_insult_index = 0
@@ -50,7 +50,7 @@ def spawn_filter_node():
     subprocess.Popen([sys.executable,'InsultFilter/InsultFilterServer.py',insult_uri,str(port)])
     return FilterNode(port)
 
-# SRound-robin or static selection for insult nodes
+# Round-robin or static selection for insult nodes
 def get_insult_node():
     global _RR_insult_index
     node = _InsultNodeList[_RR_insult_index]
@@ -58,7 +58,7 @@ def get_insult_node():
         _RR_insult_index = (_RR_insult_index + 1) % len(_InsultNodeList)
     return node
 
-# Round-robin or statis selection for filter nodes
+# Round-robin or static selection for filter nodes
 def get_filter_node():
     global _RR_filter_index
     node = _FilterNodeList[_RR_filter_index_filter]
@@ -73,13 +73,13 @@ def fillServerWithInsults(uri):
     for ins in insults:
         proxy.add_insult(ins)
 
-# Función de carga para InsultService
+# Stress test for InsultServer
 def floadInsultServer(uri):
     proxy = Pyro4.Proxy(uri)
     for _ in range(REQS_PER_WORKER):
         proxy.insult_me()
 
-# Función de carga para InsultFilterService
+# Stress test for FilterServer
 def floadFilterServer(uri):
     proxy = Pyro4.Proxy(uri)
     phrases = [
@@ -175,7 +175,7 @@ def floadFilterServer(uri):
 # Spawn workers passing the function, not calling it
 def spawnWorkers(ports, func):
     for port in ports:
-        # Determinar URI según función
+        # Determine URI depending function
         if func is floadInsultServer:
             uri = f"PYRO:example.InsultServer@{BASE_HOST}:{port}"
         else:

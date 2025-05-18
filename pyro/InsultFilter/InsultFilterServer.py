@@ -30,7 +30,7 @@ class InsultFilterServer:
         while not self.abort_flag.is_set():
             try:
                 proxy = Pyro4.Proxy(self.insult_uri)
-                print(f"[Filter @{self.insult_uri}] actualizando…")
+                print(f"[Filter @{self.insult_uri}] updating insults…")
                 insults = proxy.get_insults()
                 sorted_insults = sorted(insults, key=len, reverse=True)
                 escaped = [re.escape(w) for w in sorted_insults]
