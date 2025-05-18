@@ -1,83 +1,93 @@
 import sys
-import subprocess
+import redis
+import multiprocessing
 import time
 import random
-import multiprocessing as mp
-import redis
+import re
 
-# Configuración de nodos\ nNUM_OF_NODES = int(sys.argv[1]) if len(sys.argv) > 1 and int(sys.argv[1]) > 1 else 1
-BASE_HOST = '127.0.0.1'
-BASE_INSULT_PORT = 8000
-BASE_FILTER_PORT = 9000
+# Leer número de "nodos" (lógicos) por parámetro
+NUM_OF_NODES = int(sys.argv[1]) if len(sys.argv) > 1 and int(sys.argv[1]) > 1 else 1
 
-# Redis\ nREDIS_HOST = 'localhost'
+# Redis configuration
+REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
-PUBSUB_CHANNEL = 'insults_channel'
-FILTERED_LIST_KEY = 'filtered_texts'
+INSULTS_KEY = 'insults'
+FILTERED_LIST_KEY = 'filtered_results'
 
-# Carga\ nTOTAL_REQS = 200_000
-NUM_WORKERS = 8
-REQS_PER_WORKER = TOTAL_REQS // (NUM_OF_NODES * NUM_WORKERS)
-_workers = []
+# Test parameters
+TOTAL_REQS = 200_000
+# Mitad de peticiones para insult y mitad para filter
+REQS_PER_PHASE = TOTAL_REQS // 2
+# Número de procesos por nodo lógico
+WORKERS_PER_NODE = 8
+# Total de procesos
+N_PROCESSES = NUM_OF_NODES * WORKERS_PER_NODE
+# Cada proceso procesa
+REQS_PER_PROCESS = REQS_PER_PHASE // N_PROCESSES
 
-class InsultNode:
-    def __init__(self, port):
-        self.port = port
+# Conexión inicial a Redis y preparación de datos
+r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+r.flushdb()
+insults = ["idiota", "tonto", "imbecil", "estupido", "bobo", "loco"]
+r.sadd(INSULTS_KEY, *insults)
 
-class FilterNode:
-    def __init__(self, port):
-        self.port = port
+# Construir frases de prueba
+phrases = []
+base_templates = [
+    "Eres un %s en potencia",
+    "Qué comentario más %s",
+    "Ese comportamiento es de un %s",
+    "%s total"
+]
+for tmpl in base_templates:
+    for ins in insults:
+        phrases.append(tmpl % ins)
 
-# Arranca procesos server de insult
-    def spawn_insult_node():
-    port = BASE_INSULT_PORT + len(insult_nodes)
-    subprocess.Popen([sys.executable, 'InsultService/InsultServer.py', str(port)])
-    insult_nodes.append(InsultNode(port))
+# Worker para obtener insultos aleatorios
+def insult_worker(n):
+    rc = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    for _ in range(n):
+        rc.srandmember(INSULTS_KEY)
 
-# Arranca procesos server filter
- def spawn_filter_node():
-    port = BASE_FILTER_PORT + len(filter_nodes)
-    subprocess.Popen([sys.executable, 'InsultFilter/InsultFilterServer.py', str(port)])
-    filter_nodes.append(FilterNode(port))
+# Worker para filtrar frases
+def filter_worker(n):
+    rc = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    pat = None
+    for _ in range(n):
+        if pat is None:
+            current = rc.smembers(INSULTS_KEY)
+            esc = [re.escape(w) for w in current]
+            pat = re.compile(r"\b(" + "|".join(esc) + r")\b", flags=re.IGNORECASE)
+        text = random.choice(phrases)
+        pat.sub("CENSORED", text)
+        rc.rpush(FILTERED_LIST_KEY, text)
 
-# Worker de publish/subscripció
- def floadInsultServer(_):
-    r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-    for _ in range(REQS_PER_WORKER):
-        insult = random.choice(list(r.smembers('insults')))
-        r.publish(PUBSUB_CHANNEL, insult)
+if __name__ == "__main__":
+    print(f"Test Redis con {NUM_OF_NODES} nodo(s) lógicos, {N_PROCESSES} procesos ({WORKERS_PER_NODE} por nodo), {REQS_PER_PHASE} reqs por fase")
 
-# Worker de filter
- def floadFilterServer(_):
-    r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-    phrase = random.choice(["some text with clown", "another with blockhead"])
-    r.rpush(FILTERED_LIST_KEY, re.sub(r"clown|blockhead", 'CENSORED', phrase))
-
-# Spawn workers
- def spawn_workers(func):
-    for _ in range(NUM_WORKERS * NUM_OF_NODES):
-        p = mp.Process(target=func, args=(None,))
-        _workers.append(p)
+    # Fase 1: insult
+    procs = []
+    start = time.perf_counter()
+    for _ in range(N_PROCESSES):
+        p = multiprocessing.Process(target=insult_worker, args=(REQS_PER_PROCESS,))
         p.start()
+        procs.append(p)
+    for p in procs:
+        p.join()
+    elapsed = time.perf_counter() - start
+    rps = REQS_PER_PHASE / elapsed
+    print(f"Fase 1: {REQS_PER_PHASE} llamadas en {elapsed:.2f}s -> {rps:.2f} req/s")
 
-# Espera
- def wait_workers():
-    for p in _workers: p.join()
-
-if __name__ == '__main__':
-    insult_nodes = []
-    filter_nodes = []
-    for _ in range(NUM_OF_NODES):
-        spawn_insult_node()
-        spawn_filter_node()
-    time.sleep(2)
-
-    # Test Insult
-    spawn_workers(floadInsultServer)
-    wait_workers()
-
-    # Test Filter
-    spawn_workers(floadFilterServer)
-    wait_workers()
-
-    print('Done')
+    # Fase 2: filter
+    r.delete(FILTERED_LIST_KEY)
+    procs = []
+    start = time.perf_counter()
+    for _ in range(N_PROCESSES):
+        p = multiprocessing.Process(target=filter_worker, args=(REQS_PER_PROCESS,))
+        p.start()
+        procs.append(p)
+    for p in procs:
+        p.join()
+    elapsed = time.perf_counter() - start
+    rps = REQS_PER_PHASE / elapsed
+    print(f"Fase 2: {REQS_PER_PHASE} llamadas en {elapsed:.2f}s -> {rps:.2f} req/s")
