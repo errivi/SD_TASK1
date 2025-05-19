@@ -61,7 +61,7 @@ def get_insult_node():
 # Round-robin or static selection for filter nodes
 def get_filter_node():
     global _RR_filter_index
-    node = _FilterNodeList[_RR_filter_index_filter]
+    node = _FilterNodeList[_RR_filter_index]
     if len(_FilterNodeList) > 1:
         _RR_filter_index = (_RR_filter_index + 1) % len(_FilterNodeList)
     return node
