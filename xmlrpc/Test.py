@@ -168,22 +168,28 @@ def floadFilterServer(url):
         "Zany times with you—though mostly just bizarre and confusing.",
         "Zany as always, but not in a good way.",
     ]
-    victim = ServerProxy(url, allow_none=True)
+    victims = [ServerProxy(uri, allow_none=True) for uri in url]
+    RR_uris = 0
+    maxURIs = len(victims)
     for _ in range(REQS_PER_WORKER):
-        victim.filter(random.choice(phrases))
+        victims[RR_uris].filter(random.choice(phrases))
+        RR_uris = RR_uris + 1
+        if (RR_uris == maxURIs): RR_uris = 0
 
 def floadInsultServer(url):
-    victim = ServerProxy(url, allow_none=True)
+    victims = [ServerProxy(uri, allow_none=True) for uri in url]
+    RR_uris = 0
+    maxURIs = len(victims)
     for _ in range(REQS_PER_WORKER):
-        victim.insult()
+        victims[RR_uris].insult()
+        RR_uris = RR_uris + 1
+        if (RR_uris == maxURIs): RR_uris = 0
 
 def spawnWorkers(ports, num, work):
-    for port in ports:
-        dir = f'http://127.0.0.1:{port}'
-        for _ in range(num):
-            p = mp.Process(target=work, args=(dir,))
-            _workers.append(p)
-            p.start()
+    for _ in range(num):
+        p = mp.Process(target=work, args=(ports,))
+        _workers.append(p)
+        p.start()
 
 def waitForWorkers():
     for w in _workers:
@@ -195,22 +201,22 @@ if __name__=='__main__':
     #initialize_nodes()
     for _ in range(NUM_OF_NODES): spawn_insult_node()
     time.sleep(2)
+    serversURIs = []
+    for node in _InsultNodeList: serversURIs.append(f'http://127.0.0.1:{node.port}')
 
     # Testing InsultService
     print("Filling the servers with insults...")
-    for node in _InsultNodeList: fillServerWithInsults(f'http://127.0.0.1:{node.port}')
+    for uri in serversURIs: fillServerWithInsults(uri)
 
     print("Starting Insult test... (making every worker do ", REQS_PER_WORKER, " reqs)")
-    listOfPorts = []
-    for node in _InsultNodeList: listOfPorts.append(node.port)
 
     delta = time.time()
-    spawnWorkers(listOfPorts, NUM_OF_WORKERS, floadInsultServer)
+    spawnWorkers(serversURIs, NUM_OF_WORKERS, floadInsultServer)
     waitForWorkers()
     delta = time.time() - delta
 
     print("Test finished.")
-    reqs = len(listOfPorts)*NUM_OF_WORKERS*REQS_PER_WORKER
+    reqs = len(serversURIs)*NUM_OF_WORKERS*REQS_PER_WORKER
     print("RES: Made ", reqs, " reqs in ", delta, " secs. Got ", (reqs/delta), " reqs/s")
 
     # Spawning initial filter nodes
@@ -219,16 +225,16 @@ if __name__=='__main__':
 
     # Testing InsultFilter
     print("Starting Filter test... (making every worker do ", REQS_PER_WORKER, " reqs)")
-    listOfPorts = []
-    for node in _FilterNodeList: listOfPorts.append(node.port)
+    serversURIs = []
+    for node in _FilterNodeList: serversURIs.append(f'http://127.0.0.1:{node.port}')
 
     delta = time.time()
-    spawnWorkers(listOfPorts, NUM_OF_WORKERS, floadFilterServer)
+    spawnWorkers(serversURIs, NUM_OF_WORKERS, floadFilterServer)
     waitForWorkers()
     delta = time.time() - delta
 
     print("Test finished.")
-    reqs = len(listOfPorts)*NUM_OF_WORKERS*REQS_PER_WORKER
+    reqs = len(serversURIs)*NUM_OF_WORKERS*REQS_PER_WORKER
     print("RES: Made ", reqs, " reqs in ", delta, " secs. Got ", (reqs/delta), " reqs/s")
 
     # Kill everything
