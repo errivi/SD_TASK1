@@ -1,69 +1,73 @@
-import sys
-import threading
-import time
-import re
+# filter_server.py
+#!/usr/bin/env python3
 import redis
+import time
+import json
+import re
+
+# In-memory insults storage
+insults = ["clown", "blockhead", "dimwit", "nincompoop", "simpleton", "dullard", "buffoon", "nitwit", "half-wit",
+           "scatterbrain", "scatterbrained", "knucklehead", "dingbat", "doofus", "ninny", "ignoramus", "muttonhead",
+           "bonehead", "airhead", "puddingbrain", "mushbrain", "blockhead", "dunderhead", "lamebrain", "muttonhead",
+           "numbskull", "dimwit", "dullard", "fool", "goofball", "knucklehead", "lunkhead", "maroon", "mook",
+           "nincompoop", "ninnyhammer", "numskull", "patzer", "puddingbrain", "sap", "simpleton", "scofflaw",
+           "screwball", "twit", "woozle", "yahoo", "zany"]
 
 # Configuration
-_INSULT_LIST_TTL = 5 * 60  # 5 minutes
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
-INSULTS_SET_KEY = 'insults'
-FILTERED_LIST_KEY = 'filtered_texts'
+COMMAND_QUEUE = 'filter_channel'
+RESPONSE_QUEUE = 'filter_response_queue'
 
-# Initialize Redis client
+# In-memory storage for filtered texts
+filtered_texts = []
+
+# Compile regex pattern once (word boundaries + case-insensitive)
+_pattern = re.compile(
+    r"\b(?:" + "|".join(re.escape(word) for word in insults) + r")(?:\w*)\b",
+    flags=re.IGNORECASE
+)
+
+# Redis connection for queue
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
-# Compile dummy
-pattern = re.compile("$")
-# Store filtered results in Redis list
-# Periodically update the insult pattern
+def filter_text(text):
+    filtered_version = _pattern.sub("CENSORED", text)
+    # Append only if different from the last entry to avoid duplicates
+    if not filtered_texts or filtered_texts[-1] != filtered_version:
+        filtered_texts.append(filtered_version)
+    return filtered_version
 
-def update_insults():
-    global pattern
+# Processor: handle commands and respond
+def processor():
+    print("Starting filter processor...")
     while True:
+        _, raw = r.brpop(COMMAND_QUEUE)
         try:
-            insults = r.smembers(INSULTS_SET_KEY)
-            sorted_insults = sorted(insults, key=len, reverse=True)
-            escaped = [re.escape(w) for w in sorted_insults]
-            pattern = re.compile(r"\b(" + "|".join(escaped) + r")\b", flags=re.IGNORECASE)
-            print(f"[Filter] Updated insult pattern with {len(escaped)} words")
-        except Exception as e:
-            print(f"[Filter] Error updating insults: {e}")
-        time.sleep(_INSULT_LIST_TTL)
-
-# Start updater thread
-t = threading.Thread(target=update_insults, daemon=True)
-t.start()
-
-# Command-line interface
-def main():
-    print("Filter server started. Commands: filter <text>, get, exit")
-    while True:
-        try:
-            line = input('> ').strip()
-        except (EOFError, KeyboardInterrupt):
-            print("Shutting down filter server.")
-            break
-        if not line:
+            cmd = json.loads(raw)
+            method = cmd.get('method')
+            arg = cmd.get('arg')
+        except json.JSONDecodeError:
+            print(f"Invalid command: {raw}")
             continue
-        parts = line.split(maxsplit=1)
-        cmd = parts[0].lower()
-        arg = parts[1] if len(parts) > 1 else None
 
-        if cmd == 'filter' and arg:
-            filtered = pattern.sub('CENSORED', arg)
-            r.rpush(FILTERED_LIST_KEY, filtered)
-            print(filtered)
-        elif cmd == 'get':
-            results = r.lrange(FILTERED_LIST_KEY, 0, -1)
-            for i, txt in enumerate(results, 1):
-                print(f"{i}. {txt}")
-        elif cmd == 'exit':
-            print("Shutting down filter server.")
-            break
-        else:
-            print("Unknown command. Use filter <text>, get, or exit.")
+        match method:
+            case 'filter' if arg:
+                filtered = filter_text(arg)
+                response = json.dumps({'filtered': filtered})
+                r.lpush(RESPONSE_QUEUE, response)
+                print(f"[Processor] filtered text: {filtered}")
+
+            case 'getFiltered':
+                response = json.dumps({'filtered_list': filtered_texts})
+                r.lpush(RESPONSE_QUEUE, response)
+                print(f"[Processor] returned filtered text list")
+
+            case _:
+                print(f"[Processor] unknown method or missing argument: {cmd}")
 
 if __name__ == '__main__':
-    main()
+    try:
+        processor()
+    except KeyboardInterrupt:
+        print("Filter server stopped")

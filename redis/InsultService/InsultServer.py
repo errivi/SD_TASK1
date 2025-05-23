@@ -1,58 +1,81 @@
-import sys
+# server.py
+#!/usr/bin/env python3
+import redis
 import threading
 import time
 import random
-import redis
+import json
 
-# Redis configuration
+# Configuration
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
-INSULTS_SET_KEY = 'insults'
-PUBSUB_CHANNEL = 'insults_channel'
+COMMAND_QUEUE = 'insult_channel'
+RESPONSE_QUEUE = 'insult_response_queue'
+PUBSUB_CHANNEL = 'insults_broadcast'
 BROADCAST_INTERVAL = 5  # seconds
 
-# Initialize Redis client
+# In-memory insults storage
+insults = ["clown", "blockhead", "dimwit", "nincompoop", "simpleton", "dullard", "buffoon", "nitwit", "half-wit",
+           "scatterbrain", "scatterbrained", "knucklehead", "dingbat", "doofus", "ninny", "ignoramus", "muttonhead",
+           "bonehead", "airhead", "puddingbrain", "mushbrain", "blockhead", "dunderhead", "lamebrain", "muttonhead",
+           "numbskull", "dimwit", "dullard", "fool", "goofball", "knucklehead", "lunkhead", "maroon", "mook",
+           "nincompoop", "ninnyhammer", "numskull", "patzer", "puddingbrain", "sap", "simpleton", "scofflaw",
+           "screwball", "twit", "woozle", "yahoo", "zany"]
+
+# Redis connection for pub/sub and queue
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
-# Broadcaster thread: picks a random insult and publishes to channel
+# Broadcaster thread: publishes a random insult every interval
 def broadcaster():
     while True:
-        if r.scard(INSULTS_SET_KEY) > 0:
-            insults = list(r.smembers(INSULTS_SET_KEY))
+        if insults:
             insult = random.choice(insults)
             r.publish(PUBSUB_CHANNEL, insult)
-            print(f"Broadcasted insult: {insult}")
+            print(f"[Broadcast] sent: {insult}")
         time.sleep(BROADCAST_INTERVAL)
 
-# Command-line interface for the insult server
-if __name__ == '__main__':
-    # Start broadcaster thread\    threading.Thread(target=broadcaster, daemon=True).start()
-    print("Insult server started. Available commands: add <insult>, get, random, exit")
+# Processor: handles commands from queue and updates local set or responds
+def processor():
+    print("Starting command processor...")
     while True:
+        _, raw = r.brpop(COMMAND_QUEUE)
         try:
-            line = input('> ').strip()
-        except (EOFError, KeyboardInterrupt):
-            print("Shutting down insult server.")
-            break
-        if not line:
+            cmd = json.loads(raw)
+            method = cmd.get('method')
+            arg = cmd.get('arg')
+        except json.JSONDecodeError:
+            print(f"Invalid command: {raw}")
             continue
-        parts = line.split(maxsplit=1)
-        cmd = parts[0].lower()
-        arg = parts[1] if len(parts) > 1 else None
-        if cmd == 'add' and arg:
-            r.sadd(INSULTS_SET_KEY, arg)
-            print(f"Added insult: {arg}")
-        elif cmd == 'get':
-            insults = r.smembers(INSULTS_SET_KEY)
-            print(f"Insults: {insults}")
-        elif cmd in ('random', 'insult'):
-            if r.scard(INSULTS_SET_KEY) == 0:
-                print("NoInsultsSaved")
-            else:
-                insult = random.choice(list(r.smembers(INSULTS_SET_KEY)))
-                print(insult)
-        elif cmd == 'exit':
-            print("Shutting down insult server.")
-            break
-        else:
-            print("Unknown command. Use add <insult>, get, random, or exit.")
+        match method:
+            case 'add' if arg:
+                if arg not in insults:
+                    insults.add(arg)
+                    #print(f"[Processor] added insult: {arg}")
+
+            case 'get':
+                # Respond with full list
+                response = json.dumps({'insults': insults})
+                r.lpush(RESPONSE_QUEUE, response)
+                #print(f"[Processor] responded with insults list")
+
+            case 'insult':
+                # Respond with a random insult or None
+                if insults:
+                    insult = random.choice(insults)
+                    response = json.dumps({'insult': insult})
+                else:
+                    response = json.dumps({'insult': None})
+                r.lpush(RESPONSE_QUEUE, response)
+                #print(f"[Processor] responded with random insult")
+
+            case _:
+                print(f"[Processor] unknown method or missing argument: {cmd}")
+
+if __name__ == '__main__':
+    # Start broadcaster
+    threading.Thread(target=broadcaster, daemon=True).start()
+    # Start processor
+    try:
+        processor()
+    except KeyboardInterrupt:
+        print("Server stopped")
