@@ -1,64 +1,86 @@
+# client.py
 #!/usr/bin/env python3
 import redis
-import random
+import threading
 import time
+import json
 
-# Initial configuration
+# Configuration
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
-INSULTS_KEY = 'insults'
-PUBSUB_CHANNEL = 'insults_channel'
+COMMAND_QUEUE = 'insult_channel'         # Queue for sending commands to server
+RESPONSE_QUEUE = 'insult_response_queue' # Queue for receiving responses from server
+PUBSUB_CHANNEL = 'insults_broadcast'    # Channel for server broadcasts
 
 class RedisInsultClient:
     def __init__(self, host=REDIS_HOST, port=REDIS_PORT):
         self.r = redis.Redis(host=host, port=port, decode_responses=True)
 
     def add_insult(self, insult):
-        added = self.r.sadd(INSULTS_KEY, insult)
-        print(f"add('{insult}') -> {'added' if added else 'already existed'}")
+        # Send 'add' command to server
+        cmd = json.dumps({'method': 'add', 'arg': insult})
+        self.r.lpush(COMMAND_QUEUE, cmd)
+        print(f"-> Sent ADD command '{insult}' to server")
 
     def get_insults(self):
-        insults = list(self.r.smembers(INSULTS_KEY))
-        print(f"get() -> {insults}")
+        # Send 'get' command and wait for server response
+        cmd = json.dumps({'method': 'get', 'arg': None})
+        self.r.lpush(COMMAND_QUEUE, cmd)
+        # Block until server responds
+        _, raw = self.r.brpop(RESPONSE_QUEUE)
+        response = json.loads(raw)
+        insults = response.get('insults', [])
+        print(f"get_insults() -> {insults}")
         return insults
 
     def insult_me(self):
-        count = self.r.scard(INSULTS_KEY)
-        if count == 0:
-            print("insult() -> NoInsultsSaved")
+        # Send 'insult' command and wait for server response
+        cmd = json.dumps({'method': 'insult', 'arg': None})
+        self.r.lpush(COMMAND_QUEUE, cmd)
+        # Block until server responds
+        _, raw = self.r.brpop(RESPONSE_QUEUE)
+        response = json.loads(raw)
+        insult = response.get('insult')
+        if insult is None:
+            print("insult_me() -> NoInsultsAvailable")
             return None
-        insult = self.r.srandmember(INSULTS_KEY)
-        print(f"insult() -> {insult}")
+        print(f"insult_me() -> {insult}")
         return insult
 
-    def clear_insults(self):
-        self.r.delete(INSULTS_KEY)
-        print("clear_insults() -> done")
+    def subscribe_insults(self):
+        # Subscribe to broadcast channel and print messages
+        pubsub = self.r.pubsub(ignore_subscribe_messages=True)
+        pubsub.subscribe(PUBSUB_CHANNEL)
+        print(f"Subscribed to channel '{PUBSUB_CHANNEL}'. Waiting for insults...")
+        for message in pubsub.listen():
+            print(f"[Broadcast] {message['data']}")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     client = RedisInsultClient()
 
-    print("\n--- Initial clean ---")
-    client.clear_insults()
-
-    print("\n--- test: get() empty ---")
+    print("\n--- Basic Tests ---")
     client.get_insults()
-
-    print("\n--- test: insult() empty ---")
     client.insult_me()
 
-    print("\n--- test: add_insult() & get() ---")
-    sample = ["clown", "blockhead", "dimwit", "nincompoop"]
-    for ins in sample:
+    print("\n--- Adding insults via queue ---")
+    for ins in ['clown', 'blockhead', 'dimwit']:
         client.add_insult(ins)
+        time.sleep(0.1)
+
+    print("\n--- Retrieving insults from server ---")
     client.get_insults()
 
-    print("\n--- test: add duplicated ---")
-    client.add_insult("clown")  # existing insult
-
-    print("\n--- test: insult_me() multiple times ---")
+    print("\n--- Random insult tests ---")
     for _ in range(5):
         client.insult_me()
         time.sleep(0.2)
 
-    print("\n--- Test end ---")
+    # Start subscription thread
+    t = threading.Thread(target=client.subscribe_insults, daemon=True)
+    t.start()
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Client stopped")

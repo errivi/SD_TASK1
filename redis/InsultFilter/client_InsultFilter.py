@@ -1,77 +1,56 @@
+# filter_client.py
 #!/usr/bin/env python3
 import redis
-import re
-import sys
+import threading
 import time
+import json
 
-# Redis configuration
+texts_to_filter = [
+    "You're such a clown, always acting the fool.",
+    "Honestly, you're a blockhead who can't catch a break.",
+    "That idea was as dimwitted as it gets.",
+    "Stop being a nincompoop and think for a second.",
+    "You're a simpleton with no sense of the bigger picture.",
+]
+
+# Configuration
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
-INSULTS_KEY = 'insults'
-FILTERED_LIST_KEY = 'filtered_texts'
+COMMAND_QUEUE = 'filter_channel'          # Queue for sending commands to filter server
+RESPONSE_QUEUE = 'filter_response_queue'  # Queue for receiving responses from filter server
+
 
 class RedisFilterClient:
     def __init__(self, host=REDIS_HOST, port=REDIS_PORT):
         self.r = redis.Redis(host=host, port=port, decode_responses=True)
-        # Pre-build pattern once on init
-        self._compile_pattern()
-
-    def _compile_pattern(self):
-        insults = self.r.smembers(INSULTS_KEY)
-        sorted_insults = sorted(insults, key=len, reverse=True)
-        escaped = [re.escape(w) for w in sorted_insults]
-        if escaped:
-            pattern_str = r"\b(" + "|".join(escaped) + r")\b"
-            self.pattern = re.compile(pattern_str, flags=re.IGNORECASE)
-        else:
-            # No insults yet: match nothing
-            self.pattern = re.compile(r"(?!x)x")
 
     def filter_text(self, text):
-        filtered = self.pattern.sub("CENSORED", text)
-        self.r.rpush(FILTERED_LIST_KEY, filtered)
+        # Send 'filter' command and wait for response
+        cmd = json.dumps({'method': 'filter', 'arg': text})
+        self.r.lpush(COMMAND_QUEUE, cmd)
+        _, raw = self.r.brpop(RESPONSE_QUEUE)
+        response = json.loads(raw)
+        filtered = response.get('filtered')
+        print(f"filter_text() -> {filtered}")
         return filtered
 
-    def get_filtered_texts(self):
-        return self.r.lrange(FILTERED_LIST_KEY, 0, -1)
+    def get_filtered(self):
+        # Send 'getFiltered' command and wait for response
+        cmd = json.dumps({'method': 'getFiltered', 'arg': None})
+        self.r.lpush(COMMAND_QUEUE, cmd)
+        _, raw = self.r.brpop(RESPONSE_QUEUE)
+        response = json.loads(raw)
+        filtered_list = response.get('filtered_list', [])
+        return filtered_list
 
-    def clear_filtered(self):
-        self.r.delete(FILTERED_LIST_KEY)
-
-    def refresh_insults(self):
-        self._compile_pattern()
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     client = RedisFilterClient()
 
-    # Prepare test data
-    print("\n--- Clearing existing filtered results ---")
-    client.clear_filtered()
+    for phrase in texts_to_filter:
+        filtered = client.filter_text(phrase)
+        print(f"Original: {phrase}\nFiltered: {filtered}\n")
 
-    print("\n--- Current insults set ---")
-    insults = list(client.r.smembers(INSULTS_KEY))
-    print(insults if insults else "(empty)")
-
-    # Sample phrases to test
-    sample_phrases = [
-        "You are such a clown, always clowning around.",
-        "I can't believe that doofus just did that.",
-        "This is a perfectly innocent sentence.",
-        "Only a buffoon would think that's a good idea.",
-        "Nothing to censor here."
-    ]
-
-    # Filter each phrase
-    print("\n--- Filtering sample phrases ---")
-    for phrase in sample_phrases:
-        # optionally recompile if insults may have changed
-        client.refresh_insults()
-        result = client.filter_text(phrase)
-        print(f"Input:    {phrase}\nFiltered: {result}\n")
-
-    # Retrieve all filtered texts
-    print("\n--- All filtered texts stored in Redis ---")
-    for idx, txt in enumerate(client.get_filtered_texts(), start=1):
-        print(f"{idx}. {txt}")
-
-    print("\n--- Test completed ---")
+    all_filtered = client.get_filtered()
+    print("\nAll filtered texts:")
+    for idx, ft in enumerate(all_filtered, start=1):
+        print(f"{idx}. {ft}")
