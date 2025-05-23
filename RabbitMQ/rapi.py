@@ -3,9 +3,26 @@ import threading as th
 import uuid
 import time
 
+class ThreadWithReturnValue(th.Thread):
+    def __init__(self, group=None, target=None, name=None,
+                 args=(), kwargs={}, Verbose=None):
+        th.Thread.__init__(self, group, target, name, args, kwargs)
+        self._return = None
+
+    def run(self):
+        if self._target is not None:
+            self._return = self._target(*self._args,
+                                                **self._kwargs)
+    def join(self, *args):
+        th.Thread.join(self, *args)
+        return self._return
+
+def _on_response(self, ch, method, props, body):
+    return body
+
 class RabbitMQ_ClientAPI:
     """Class that acts as a simplification API for clients to easily send messages and recieve responses to/from RabbitMQ"""
-    def __init__(self, host='127.0.0.1', port=5672, method_queue=None, username='guest', password='guest', virtual_host='/', heartbeat=600):
+    def __init__(self, host='127.0.0.1', port=5672, method_queue=None, username='guest', password='guest', virtual_host='/', heartbeat=60):
         self.connection_params = pika.ConnectionParameters(
             host=host,
             port=port,
@@ -72,21 +89,16 @@ class RabbitMQ_ClientAPI:
         self._consume_queue = queue_name
 
         def _consume(stop:th.Event):
-            #print("Did actually start")
             while not stop.is_set():
-                try:
-                    method_frame, properties, body = self.channel.consume(queue=queue_name, auto_ack=auto_ack)
-                    #print("Did actually move")
-                    time.sleep(0.5)
-                    # Pass the message to user callback
-                    callback(self.channel, method_frame, properties, body)
-                    if self._response is not None: break
+                method_frame, properties, body = self.channel.consume(queue=queue_name, auto_ack=auto_ack)
+                if method_frame:
+                    result = callback(self.channel, method_frame, properties, body)
                     if auto_ack:
                         self.channel.basic_ack(delivery_tag=method_frame.delivery_tag)
-                except: continue
+                    if result is not None: stop.set()
 
         # Run consuming in a separate thread
-        self.consumer_thread = th.Thread(target=_consume, args=(self._stop_flag,), daemon=True)
+        self.consumer_thread = ThreadWithReturnValue(target=_consume, args=(self._stop_flag,))
         self.consumer_thread.start()
 
     def acknowledge_message(self, delivery_tag):
@@ -96,48 +108,65 @@ class RabbitMQ_ClientAPI:
 
     def stop_consuming(self):
         """Stop consuming messages."""
-        if self.channel:
-            self.channel.stop_consuming()
         if self.consumer_thread:
             self._stop_flag.set()
             self.consumer_thread.join(timeout=2)
             self.consumer_thread = None
+        if self.channel:
+            self.channel.stop_consuming()
 
     def setMethodQueue(self, method_queue:str):
         self._methods_queue = method_queue
 
-    def _on_response(self, ch, method, props, body):
-            self._response = body
-
-    def call(self, method:str):
+    def call(self, method:str, args:str=""):
         if not self._methods_queue: raise Exception("Attempted to call a method without constructing a connection first (up until queue selected state required).")
         if not self.channel: self.connect()
         
-        self.start_consuming(queue_name=self._consume_queue, callback=self._on_response, auto_ack=True)
+        global _results
+        self.start_consuming(queue_name=self._consume_queue, callback=_on_response, auto_ack=True)
         time.sleep(7)
+        self.publish_method(queue_name=self._methods_queue, method=method, args=args)
         self.publish_method(queue_name=self._methods_queue, method=method)
-        iter = 0
-        while self._response is None:
-            time.sleep(0.00001)#self.connection.sleep(0.00001)
-            iter += 1
-            if iter > 10_000: print("Waited too long :("); break
+        #iter = 0
+        #while _results is None:
+            #time.sleep(0.00001)#self.connection.sleep(0.00001)
+            #iter += 1
+            #if iter > 10_000: print("Waited too long :("); break
+            #print("_results is: ", _results)
             #self.connection.process_data_events()
-        try: return self._response.decode()
+        try: return self.consumer_thread.join().decode()
+        except: return "NoResponse"
         finally:
-            self._response = None
+            _results = None
             self.stop_consuming()
 
     def multicall(self, method:str, reps:int=100):
         if not self._methods_queue: raise Exception("Attempted to call a method without constructing a connection first (up until queue selected state required).")
         if not self.channel: self.connect()
         
-        self.start_consuming(queue_name=self._consume_queue, callback=self._on_response, auto_ack=True)
+        global _results
+        self.start_consuming(queue_name=self._consume_queue, callback=_on_response, auto_ack=True)
         for _ in range(reps):
             self.publish_method(queue_name=self._methods_queue, method=method)
-            while self._response is None:
-                time.sleep(0.00001)#self.connection.sleep(0.00001)
-                #try: self.connection.process_data_events()
-                #except: pass
-            self._response.decode()
-            self._response = None
+            self.consumer_thread.join()
+            #while _results is None:
+            #    time.sleep(0.00001)#self.connection.sleep(0.00001)
+            #    #print("_results is ", _results)
+            #    #try: self.connection.process_data_events()
+            #    #except: pass
+            #_results = None
         self.stop_consuming()
+    
+    def subscribeTo(self, exchange_name:str, queue_name:str):
+        if not self.channel: self.connect()
+        
+        self.channel.exchange_declare(exchange=exchange_name, exchange_type='fanout')
+        self.channel.queue_declare(queue=self._consume_queue, exclusive=True)
+        self.channel.queue_bind(exchange=exchange_name, queue=queue_name)
+
+        print(f"[Receiver] Waiting for insults... (Queue: {queue_name})")
+
+        def subscription_work(ch, method, properties, body):
+            print("[", time.ctime(time.time()), "] -> Got insult: ", body.decode())
+
+        self.channel.basic_consume(queue=queue_name, on_message_callback=subscription_work, auto_ack=True)
