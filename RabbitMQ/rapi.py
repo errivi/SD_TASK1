@@ -4,6 +4,7 @@ import uuid
 import time
 
 class RabbitMQ_ClientAPI:
+    """Class that acts as a simplification API for clients to easily send messages and recieve responses to/from RabbitMQ"""
     def __init__(self, host='127.0.0.1', port=5672, method_queue=None, username='guest', password='guest', virtual_host='/', heartbeat=600):
         self.connection_params = pika.ConnectionParameters(
             host=host,
@@ -25,6 +26,7 @@ class RabbitMQ_ClientAPI:
         self.connection = pika.BlockingConnection(self.connection_params)
         self.channel = self.connection.channel()
         self.channel.queue_declare(queue=self._consume_queue, durable=False, auto_delete=True)
+        print("Is connection opened? ", self.connection.is_open)
     
     def close(self):
         """Close the connection and basically factory reset the instance"""
@@ -52,7 +54,7 @@ class RabbitMQ_ClientAPI:
             self.connect()
         if not self._consume_queue:
             self._consume_queue = str(uuid.uuid4())
-        properties = pika.BasicProperties(type=method, delivery_mode=2 if persistent else 1)
+        properties = pika.BasicProperties(type=method, delivery_mode=2 if persistent else 1, reply_to=self._consume_queue)
         self.channel.basic_publish(
             exchange='',
             routing_key=routing_key or queue_name,
@@ -60,7 +62,7 @@ class RabbitMQ_ClientAPI:
             properties=properties
         )
 
-    def start_consuming(self, queue_name, callback, auto_ack=False):
+    def start_consuming(self, queue_name, callback, auto_ack=True):
         """
         Start consuming messages from a queue.
          - callback should be a function accepting 4 parameters: (channel, method, properties, body)
@@ -78,6 +80,7 @@ class RabbitMQ_ClientAPI:
                     time.sleep(0.5)
                     # Pass the message to user callback
                     callback(self.channel, method_frame, properties, body)
+                    if self._response is not None: break
                     if auto_ack:
                         self.channel.basic_ack(delivery_tag=method_frame.delivery_tag)
                 except: continue
@@ -111,10 +114,11 @@ class RabbitMQ_ClientAPI:
         if not self.channel: self.connect()
         
         self.start_consuming(queue_name=self._consume_queue, callback=self._on_response, auto_ack=True)
+        time.sleep(7)
         self.publish_method(queue_name=self._methods_queue, method=method)
         iter = 0
         while self._response is None:
-            time.sleep(0.00001)
+            time.sleep(0.00001)#self.connection.sleep(0.00001)
             iter += 1
             if iter > 10_000: print("Waited too long :("); break
             #self.connection.process_data_events()
@@ -131,7 +135,7 @@ class RabbitMQ_ClientAPI:
         for _ in range(reps):
             self.publish_method(queue_name=self._methods_queue, method=method)
             while self._response is None:
-                time.sleep(0.00001)
+                time.sleep(0.00001)#self.connection.sleep(0.00001)
                 #try: self.connection.process_data_events()
                 #except: pass
             self._response.decode()

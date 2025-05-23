@@ -13,20 +13,20 @@ _INSULT_FILTER_QUEUE = 'insult_filter'
 
 # 0 for dynamic load balancing, >0 for static number of nodes
 NUM_OF_NODES = int(sys.argv[1]) if int(sys.argv[1]) > 0 else 0
-_insults = None
+_insults = set()
 
 # Global variables
 _managers = set()
 _filters = set()
 
-def returnResult(ch, method,  properties, data):
-        ch.basic_publish(
+def returnResult(properties, data):
+        channel = startPikaConnection()
+        channel.basic_publish(
             exchange='',
-            routing_key=properties.reply_to,
+            routing_key=str(properties.reply_to),
             properties=pika.BasicProperties(correlation_id=properties.correlation_id),
             body=data
         )
-        ch.basic_ack(delivery_tag=method.delivery_tag)
 
 def InsultManager():
     def stopServer(signum, frame):
@@ -40,16 +40,19 @@ def InsultManager():
 
     def callback(ch, method, properties, body):
         args = body.decode()
-        match properties.type():
+        match properties.type:
             case 'add':
                 if args not in _insults: _insults.append(args)
             case 'get':
-                returnResult(ch=ch, method=method, properties=properties, data=_insults)
+                returnResult(properties=properties, data=_insults)
             case 'insultMe':
-                returnResult(ch=ch, method=method, properties=properties, data=random.choice(_insults))
+                insult = random.choice(list(_insults)) if len(_insults) > 0 else "NoInsultsSaved"
+                print("Requested insult, got: ", insult)
+                #returnResult(properties=properties, data=random.choice(list(_insults)) if len(_insults) > 0 else "NoInsultsSaved")
             case 'subscribe':
                 pass #TODO
             case _:
+                #print("Message was unknow. Ch: ", ch, " Method: ", method, " Properties: ", properties, " Body: ", body.decode())
                 pass
     channel.basic_consume(queue=_INSULT_MANAGER_QUEUE, on_message_callback=callback, auto_ack=True)
     channel.start_consuming()
@@ -66,7 +69,7 @@ def InsultFilter():
 
     def callback(ch, method, properties, body):
         args = body.decode()
-        match properties.type():
+        match properties.type:
             case 'filter':
                 pass #TODO
             case 'getHistory':
