@@ -49,6 +49,8 @@ with SimpleXMLRPCServer(addr_to_deploy,
     server.register_function(get_insults, 'get')
 
     def insult_me():
+        i = 0
+        for _ in range(10_000): i += 1 #Add latency to the request to mitigate not enough clients problem
         if len(insults_set) == 0: return "NoInsultsSaved"
         else: return random.choice(list(insults_set))
     server.register_function(insult_me, 'insult')

@@ -1,0 +1,69 @@
+[*] 6 workers | 9_000 reqs | {1, 2, 3, 4} nodes |factor 10_000
+
+E:\URV\3er\SD\SD_TASK1\xmlrpc>python Test.py 1 && python Test.py 2 && python Test.py 3 && python Test.py 4
+Spawning all the nodes...
+Service server active on  ('127.0.0.1', 8000)
+Filling the servers with insults...
+Starting Insult test... (making every worker do  1500  reqs)
+Test finished.
+RES: Made  9000  reqs in  34.533278465270996  secs. Got  260.6181746992545  reqs/s
+[Filter@9000] ➔ periodic update GET http://127.0.0.1:8000
+Filter service active on  http://127.0.0.1:9000
+Starting Filter test... (making every worker do  1500  reqs)
+Test finished.
+RES: Made  9000  reqs in  3.1149232387542725  secs. Got  2889.316785732191  reqs/s
+Stopping all nodes...
+Spawning all the nodes...
+Service server active on  ('127.0.0.1', 8000)
+Service server active on  ('127.0.0.1', 8001)
+Filling the servers with insults...
+Starting Insult test... (making every worker do  1500  reqs)
+Test finished.
+RES: Made  9000  reqs in  18.95352602005005  secs. Got  474.8456825647809  reqs/s
+[Filter@9000] ➔ periodic update GET http://127.0.0.1:8000
+Filter service active on  http://127.0.0.1:9000
+[Filter@9001] ➔ periodic update GET http://127.0.0.1:8000
+Filter service active on  http://127.0.0.1:9001
+Starting Filter test... (making every worker do  1500  reqs)
+Test finished.
+RES: Made  9000  reqs in  2.269530773162842  secs. Got  3965.5774252655347  reqs/s
+Stopping all nodes...
+Spawning all the nodes...
+Service server active on  ('127.0.0.1', 8000)
+Service server active on  ('127.0.0.1', 8001)
+Service server active on  ('127.0.0.1', 8002)
+Filling the servers with insults...
+Starting Insult test... (making every worker do  1500  reqs)
+Test finished.
+RES: Made  9000  reqs in  12.513777494430542  secs. Got  719.2072900453596  reqs/s
+[Filter@9001] ➔ periodic update GET http://127.0.0.1:8000
+[Filter@9000] ➔ periodic update GET http://127.0.0.1:8000
+Filter service active on  http://127.0.0.1:9001
+Filter service active on  http://127.0.0.1:9000
+[Filter@9002] ➔ periodic update GET http://127.0.0.1:8000
+Filter service active on  http://127.0.0.1:9002
+Starting Filter test... (making every worker do  1500  reqs)
+Test finished.
+RES: Made  9000  reqs in  1.6951215267181396  secs. Got  5309.353847581983  reqs/s
+Stopping all nodes...
+Spawning all the nodes...
+Service server active on  ('127.0.0.1', 8000)
+Service server active on  ('127.0.0.1', 8002)
+Service server active on  ('127.0.0.1', 8001)
+Service server active on  ('127.0.0.1', 8003)
+Filling the servers with insults...
+Starting Insult test... (making every worker do  1500  reqs)
+Test finished.
+RES: Made  9000  reqs in  9.84623670578003  secs. Got  914.0548078350316  reqs/s
+[Filter@9000] ➔ periodic update GET http://127.0.0.1:8000
+Filter service active on  http://127.0.0.1:9000
+[Filter@9001] ➔ periodic update GET http://127.0.0.1:8000
+Filter service active on  http://127.0.0.1:9001
+[Filter@9002] ➔ periodic update GET http://127.0.0.1:8000
+Filter service active on  http://127.0.0.1:9002
+[Filter@9003] ➔ periodic update GET http://127.0.0.1:8000
+Filter service active on  http://127.0.0.1:9003
+Starting Filter test... (making every worker do  1500  reqs)
+Test finished.
+RES: Made  9000  reqs in  1.9543066024780273  secs. Got  4605.213935514598  reqs/s
+Stopping all nodes...

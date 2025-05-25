@@ -21,8 +21,8 @@ _workers = []
 _servers = []
 
 # Test configurations
-TOTAL_NUM_REQS = 150_000
-NUM_OF_WORKERS = 4
+TOTAL_NUM_REQS = 9_000
+NUM_OF_WORKERS = 6
 REQS_PER_WORKER = int(TOTAL_NUM_REQS / (NUM_OF_WORKERS))
 
 class InsultNode:
@@ -119,7 +119,7 @@ if __name__=='__main__':
     delta = time.time() - delta
 
     print("Test finished.")
-    reqs = NUM_OF_NODES*NUM_OF_WORKERS*REQS_PER_WORKER
+    reqs = NUM_OF_WORKERS*REQS_PER_WORKER
     print("RES: Made ", reqs, " reqs in ", delta, " secs. Got ", (reqs/delta), " reqs/s")
 
     # Spawning initial filter nodes
@@ -137,7 +137,7 @@ if __name__=='__main__':
     delta = time.time() - delta
 
     print("Test finished.")
-    reqs = NUM_OF_NODES*NUM_OF_WORKERS*REQS_PER_WORKER
+    reqs = NUM_OF_WORKERS*REQS_PER_WORKER
     print("RES: Made ", reqs, " reqs in ", delta, " secs. Got ", (reqs/delta), " reqs/s")
 
     # Kill everything
