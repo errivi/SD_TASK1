@@ -26,11 +26,10 @@ _broadcaster = set()
 def startPikaConnection():
     connection_parameters = pika.ConnectionParameters(_RABBITMQ_DIR)
     connection = pika.BlockingConnection(connection_parameters)
-    return connection.channel()
+    return (connection, connection.channel())
 
-def returnResult(properties, data):
-        channel = startPikaConnection()
-        channel.basic_publish(
+def _returnResult(ch, properties, data):
+        ch.basic_publish(
             exchange='',
             routing_key=str(properties.reply_to),
             properties=pika.BasicProperties(correlation_id=properties.correlation_id),
@@ -39,46 +38,34 @@ def returnResult(properties, data):
 
 def InsultManager():
     def stopServer(signum, frame):
+        channel.stop_consuming()
+        connection.close()
         exit(0)
 
     signal.signal(signal.SIGINT, stopServer)
     signal.signal(signal.SIGTERM, stopServer)
 
-    channel = startPikaConnection()
+    connection, channel = startPikaConnection()
     channel.queue_declare(queue=_INSULT_MANAGER_QUEUE)
 
     def callback(ch, method, properties, body):
         args = body.decode()
         match properties.type:
             case 'add':
-                print("Zi me llego el add ", args)
-                if args not in _insults: _insults.append(args)
+                try:
+                    if args not in _insults: _insults.append(args)
+                    _returnResult(ch=ch, properties=properties, data="Insult added successfully")
+                except:
+                    _returnResult(ch=ch, properties=properties, data="Insult could not be added")
             case 'get':
-                print("Zi me llego el get")
-                ch.basic_publish(
-                    exchange='',
-                    routing_key=str(properties.reply_to),
-                    properties=pika.BasicProperties(correlation_id=properties.correlation_id),
-                    body=str(_insults)
-                )
-                #returnResult(properties=properties, data=_insults)
+                _returnResult(ch=ch, properties=properties, data=str(_insults))
             case 'insultMe':
-                print("Zi me llego el insultMe")
-                #insult = random.choice(list(_insults)) if len(_insults) > 0 else "NoInsultsSaved"
-                #insult = insult
-                #ch.basic_ack(delivery_tag=method.delivery_tag)
-                #print("Requested insult, got: ", insult)
-                ch.basic_publish(
-                    exchange='',
-                    routing_key=str(properties.reply_to),
-                    properties=pika.BasicProperties(correlation_id=properties.correlation_id),
-                    body=random.choice(list(_insults)) if len(_insults) > 0 else "NoInsultsSaved"
-                )
-                #returnResult(properties=properties, data=random.choice(list(_insults)) if len(_insults) > 0 else "NoInsultsSaved")
+                _returnResult(ch=ch, properties=properties, data=str(random.choice(list(_insults))) if len(_insults) > 0 else "NoInsultsSaved")
             #case 'subscribe':
             #    pass # No need, to subscribe start consuming the fanout echange "subscription" as a client
             case _:
                 print("ServMNG: Message was unknow. Ch: ", ch, " Method: ", method, " Properties: ", properties, " Body: ", body.decode())
+                _returnResult(ch=ch, properties=properties, data="MethodNotKnow")
                 pass
     
     channel.basic_consume(queue=_INSULT_MANAGER_QUEUE, on_message_callback=callback, auto_ack=True)
@@ -86,26 +73,30 @@ def InsultManager():
 
 def InsultFilter():
     def stopServer(signum, frame):
+        channel.stop_consuming()
+        connection.close()
         exit(0)
 
     signal.signal(signal.SIGINT, stopServer)
     signal.signal(signal.SIGTERM, stopServer)
 
-    channel = startPikaConnection()
+    connection, channel = startPikaConnection()
     channel.queue_declare(queue=_INSULT_FILTER_QUEUE)
 
+    filtered_texts = []
     def callback(ch, method, properties, body):
         _pattern = re.compile(r'\b(' + '|'.join(re.escape(word) for word in _insults) + r')\b', flags=re.IGNORECASE)
-        filtered_texts = []
         args = body.decode()
         match properties.type:
             case 'filter':
                 filtered = _pattern.sub("CENSORED", args)
                 filtered_texts.append(filtered)
-                returnResult(properties=properties, data=filtered)
+                _returnResult(ch, properties=properties, data=filtered)
             case 'getHistory':
-                returnResult(properties=properties, data=filtered_texts)
+                _returnResult(ch, properties=properties, data=str(filtered_texts))
             case _:
+                print("ServMNG: Message was unknow. Ch: ", ch, " Method: ", method, " Properties: ", properties, " Body: ", body.decode())
+                _returnResult(ch=ch, properties=properties, data="MethodNotKnow")
                 pass
     
     channel.basic_consume(queue=_INSULT_FILTER_QUEUE, on_message_callback=callback, auto_ack=True)
@@ -113,12 +104,13 @@ def InsultFilter():
 
 def InsultBroadcaster():
     def stopServer(signum, frame):
+        connection.close()
         exit(0)
 
     signal.signal(signal.SIGINT, stopServer)
     signal.signal(signal.SIGTERM, stopServer)
 
-    channel = startPikaConnection()
+    connection, channel = startPikaConnection()
     channel.exchange_declare(exchange=SUBSCRIBER_EXCHANGE, exchange_type='fanout')
     channel.queue_declare(queue=SUBSCRIBER_QUEUE, durable=True, exclusive=True)
     channel.queue_bind(exchange=SUBSCRIBER_EXCHANGE, queue=SUBSCRIBER_QUEUE)
@@ -128,9 +120,9 @@ def InsultBroadcaster():
             exchange=SUBSCRIBER_EXCHANGE,
             routing_key=SUBSCRIBER_QUEUE,
             body=random.choice(list(_insults)) if len(_insults) > 0 else "NoInsultsSaved",
-            properties=pika.BasicProperties(expiration="5100")
+            properties=pika.BasicProperties(expiration="5050")
         )
-        time.sleep(5)
+        connection.sleep(5)
 
 def startWorker(type:str):
     match type:
@@ -156,18 +148,22 @@ def initializeWorkers(num_manager:int, num_filter:int, broadcaster:bool):
 
 def stopServers(signum, frame):
     print("ServMNG: Stop signal recieved, stoping the servers...")
-    for worker in zip(_managers, _filters):
-        os.kill(worker.pid, signal.SIGTERM)
-    os.kill(_broadcaster.pop().pid, signal.SIGTERM)
+    for worker in (_managers | _filters):
+        worker.terminate()
+        #os.kill(worker.pid, signal.SIGTERM)
+    _broadcaster.pop().terminate()
+    #os.kill(_broadcaster.pop().pid, signal.SIGTERM)
     print("ServMNG: All servers recieved termination order. Exiting now...")
+    print("WARNING: This version of the script cannot close the connections from the workers, please manually close this terminal and start a new one (using \"start && exit\" should be enough), ignoring this step will result in the server not being rerunable")
     #exit(0)
 
 if __name__=='__main__':
     print("ServMNG: Starting initial nodes...")
     _insults = mp.Manager().list()
-    initializeWorkers(1, 1, True)
-    time.sleep(2)
+    initializeWorkers(num_manager=NUM_OF_NODES, num_filter=NUM_OF_NODES, broadcaster=True)
+    #time.sleep(2)
     print("ServMNG: Initial nodes initialized! Now serving:")
+    print("ServMNG: To stop the servers press Cntrl+C and wait around 5s")
 
     signal.signal(signal.SIGINT, stopServers)
     signal.signal(signal.SIGTERM, stopServers)
