@@ -59,6 +59,8 @@ def processor():
                 #print(f"[Processor] responded with insults list")
 
             case 'insult':
+                i = 0
+                for _ in range(10_000): i += 1  # Add latency to the request to mitigate not enough clients problem
                 # Respond with a random insult or None
                 if insults:
                     insult = random.choice(insults)
