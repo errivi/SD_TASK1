@@ -21,8 +21,8 @@ _RR_filter_index = 0
 _workers = []
 
 # Test configurations
-TOTAL_REQS = 200_000
-NUM_WORKERS = 8
+TOTAL_REQS = 9000
+NUM_WORKERS = 6
 REQS_PER_WORKER = int(TOTAL_REQS // (NUM_OF_NODES * NUM_WORKERS))
 
 class InsultNode:

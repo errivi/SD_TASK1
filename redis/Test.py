@@ -11,7 +11,7 @@ REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
 COMMAND_QUEUE = 'insult_channel'
 RESPONSE_QUEUE = 'insult_response_queue'
-NUM_REQUESTS = 10_000
+NUM_REQUESTS = 9_000
 WORKERS_PER_NODE = 8
 
 # Parse number of nodes from command-line
