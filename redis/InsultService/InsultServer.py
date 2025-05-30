@@ -38,7 +38,7 @@ def broadcaster():
 def processor():
     print("Starting command processor...")
     while True:
-        _, raw = r.brpop(COMMAND_QUEUE)
+        _, raw = r.brpop([COMMAND_QUEUE])
         try:
             cmd = json.loads(raw)
             method = cmd.get('method')

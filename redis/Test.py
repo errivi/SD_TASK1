@@ -27,7 +27,7 @@ class RedisInsultClient:
     def insult_me(self):
         cmd = json.dumps({'method': 'insult', 'arg': None})
         self.r.lpush(COMMAND_QUEUE, cmd)
-        _, raw = self.r.brpop(RESPONSE_QUEUE)
+        _, raw = self.r.brpop([RESPONSE_QUEUE])
         return json.loads(raw).get('insult')
 
 
@@ -54,9 +54,11 @@ if __name__ == '__main__':
     # Start all client processes
     for p in processes:
         p.start()
+        print("Comenzando proceso", p)
 
     # Warm-up: single request to initialize server connections
     RedisInsultClient().insult_me()
+    print("Insulto inicial")
 
     # Begin timing
     t0 = time.perf_counter()
@@ -65,6 +67,8 @@ if __name__ == '__main__':
     # Wait for all processes to finish
     for p in processes:
         p.join()
+        print("Terminado proceso", p)
+
 
     t1 = time.perf_counter()
     total_time = t1 - t0
