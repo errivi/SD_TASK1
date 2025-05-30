@@ -33,7 +33,7 @@ class InsultServer:
 
     def insult_me(self):
         i = 0
-        for _ in range(10_000): i += 1 #Add latency to the request to mitigate not enough clients problem
+        for _ in range(100_000): i += 1 #Add latency to the request to mitigate not enough clients problem
         if not self.insults_set: return "NoInsultsSaved"
         return random.choice(tuple(self.insults_set))
 

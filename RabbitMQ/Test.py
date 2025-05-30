@@ -13,8 +13,8 @@ NUM_OF_NODES = int(sys.argv[1]) if len(sys.argv) > 1 and int(sys.argv[1]) > 0 el
 INSULT_MANAGER_QUEUE = 'insult_manager'
 INSULT_FILTER_QUEUE = 'insult_filter'
 
-TOTAL_NUM_REQS = 12_000
-NUM_OF_CLIENTS = 3
+TOTAL_NUM_REQS = 5_000
+NUM_OF_CLIENTS = 8
 _REQS_PER_CLIENT = int(TOTAL_NUM_REQS / (NUM_OF_CLIENTS))
 
 ## Global variables

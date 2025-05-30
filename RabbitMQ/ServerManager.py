@@ -52,6 +52,8 @@ def InsultManager():
         args = body.decode()
         match properties.type:
             case 'add':
+                i = 0
+                for _ in range(100_000): i += 1 #Add latency to the request to mitigate not enough clients problem
                 try:
                     if args not in _insults: _insults.append(args)
                     _returnResult(ch=ch, properties=properties, data="Insult added successfully")

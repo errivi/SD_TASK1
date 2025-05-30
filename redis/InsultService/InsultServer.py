@@ -31,7 +31,7 @@ def broadcaster():
         if insults:
             insult = random.choice(insults)
             r.publish(PUBSUB_CHANNEL, insult)
-            print(f"[Broadcast] sent: {insult}")
+            #print(f"[Broadcast] sent: {insult}")
         time.sleep(BROADCAST_INTERVAL)
 
 # Processor: handles commands from queue and updates local set or responds
@@ -50,17 +50,13 @@ def processor():
             case 'add' if arg:
                 if arg not in insults:
                     insults.add(arg)
-                    #print(f"[Processor] added insult: {arg}")
-
             case 'get':
                 # Respond with full list
                 response = json.dumps({'insults': insults})
                 r.lpush(RESPONSE_QUEUE, response)
-                #print(f"[Processor] responded with insults list")
-
             case 'insult':
                 i = 0
-                for _ in range(10_000): i += 1  # Add latency to the request to mitigate not enough clients problem
+                for _ in range(100_000): i += 1  # Add latency to the request to mitigate not enough clients problem
                 # Respond with a random insult or None
                 if insults:
                     insult = random.choice(insults)
@@ -68,8 +64,6 @@ def processor():
                 else:
                     response = json.dumps({'insult': None})
                 r.lpush(RESPONSE_QUEUE, response)
-                #print(f"[Processor] responded with random insult")
-
             case _:
                 print(f"[Processor] unknown method or missing argument: {cmd}")
 

@@ -17,13 +17,13 @@ BASE_FILTER_SERVER_PORT = 9000
 _InsultNodeList = []
 _FilterNodeList = []
 
-_workers = []
+_clients = []
 _servers = []
 
 # Test configurations
-TOTAL_NUM_REQS = 9_000
-NUM_OF_WORKERS = 6
-REQS_PER_WORKER = int(TOTAL_NUM_REQS / (NUM_OF_WORKERS))
+TOTAL_NUM_REQS = 10_000
+NUM_OF_CLIENTS = 2
+REQS_PER_CLIENT = int(TOTAL_NUM_REQS / (NUM_OF_CLIENTS))
 
 class InsultNode:
     def __init__(self, port):
@@ -75,7 +75,7 @@ def floadFilterServer(url):
     victims = [ServerProxy(uri, allow_none=True) for uri in url]
     RR_uris = 0
     maxURIs = len(victims)
-    for _ in range(REQS_PER_WORKER):
+    for _ in range(REQS_PER_CLIENT):
         victims[RR_uris].filter(random.choice(phrases))
         RR_uris = RR_uris + 1
         if (RR_uris == maxURIs): RR_uris = 0
@@ -84,19 +84,19 @@ def floadInsultServer(url):
     victims = [ServerProxy(uri, allow_none=True) for uri in url]
     RR_uris = 0
     maxURIs = len(victims)
-    for _ in range(REQS_PER_WORKER):
+    for _ in range(REQS_PER_CLIENT):
         victims[RR_uris].insult()
         RR_uris = RR_uris + 1
         if (RR_uris == maxURIs): RR_uris = 0
 
-def spawnWorkers(ports, num, work):
+def spawnClients(ports, num, work):
     for _ in range(num):
         p = mp.Process(target=work, args=(ports,))
-        _workers.append(p)
+        _clients.append(p)
         p.start()
 
-def waitForWorkers():
-    for w in _workers:
+def waitForClients():
+    for w in _clients:
         w.join()
 
 if __name__=='__main__':
@@ -111,15 +111,15 @@ if __name__=='__main__':
     print("Filling the servers with insults...")
     for uri in serversURIs: fillServerWithInsults(uri)
 
-    print("Starting Insult test... (making every worker do ", REQS_PER_WORKER, " reqs)")
+    print("Starting Insult test... (making every client do ", REQS_PER_CLIENT, " reqs)")
 
     delta = time.time()
-    spawnWorkers(ports=serversURIs, num=NUM_OF_WORKERS, work=floadInsultServer)
-    waitForWorkers()
+    spawnClients(ports=serversURIs, num=NUM_OF_CLIENTS, work=floadInsultServer)
+    waitForClients()
     delta = time.time() - delta
 
     print("Test finished.")
-    reqs = NUM_OF_WORKERS*REQS_PER_WORKER
+    reqs = NUM_OF_CLIENTS*REQS_PER_CLIENT
     print("RES: Made ", reqs, " reqs in ", delta, " secs. Got ", (reqs/delta), " reqs/s")
 
     # Spawning initial filter nodes
@@ -127,21 +127,21 @@ if __name__=='__main__':
     time.sleep(2)
 
     # Testing InsultFilter
-    print("Starting Filter test... (making every worker do ", REQS_PER_WORKER, " reqs)")
+    print("Starting Filter test... (making every client do ", REQS_PER_CLIENT, " reqs)")
     serversURIs = []
     for node in _FilterNodeList: serversURIs.append(f'http://127.0.0.1:{node.port}')
 
     delta = time.time()
-    spawnWorkers(ports=serversURIs, num=NUM_OF_WORKERS, work=floadFilterServer)
-    waitForWorkers()
+    spawnClients(ports=serversURIs, num=NUM_OF_CLIENTS, work=floadFilterServer)
+    waitForClients()
     delta = time.time() - delta
 
     print("Test finished.")
-    reqs = NUM_OF_WORKERS*REQS_PER_WORKER
+    reqs = NUM_OF_CLIENTS*REQS_PER_CLIENT
     print("RES: Made ", reqs, " reqs in ", delta, " secs. Got ", (reqs/delta), " reqs/s")
 
     # Kill everything
     print("Stopping all nodes...")
-    for thread in _workers: thread.kill()
+    for thread in _clients: thread.kill()
     for server in _servers: server.kill()
     sys.exit(0)
