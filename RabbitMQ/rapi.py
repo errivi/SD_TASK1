@@ -45,13 +45,33 @@ class RabbitMQ_ClientAPI(object):
             properties=pika.BasicProperties(reply_to=self.callback_queue, correlation_id=self.corr_id, type=method_name),
             body=args)
         while self.response is None:
-            self.connection.process_data_events(time_limit=0)
+            self.connection.process_data_events(time_limit=1)
         return self.response
     
-    def flood(self, reps:int, method_name:str, args:str=""):
+    def callDEBUG(self, method_name:str, args:str=""):
+        start, send, wait = None, None, None
+        wait_n = 0
+        start = time.perf_counter()
+        self.response = None
+        self.channel.basic_publish(
+            exchange='',
+            routing_key=self.method_queue,
+            properties=pika.BasicProperties(reply_to=self.callback_queue, correlation_id=self.corr_id, type=method_name),
+            body=args)
+        send = time.perf_counter()
+        while self.response is None:
+            #time.sleep(0.005)
+            #self.connection.sleep(0.0001)
+            self.connection.process_data_events(time_limit=1)
+            wait = time.perf_counter()
+            wait_n += 1
+        return (start, send, wait, wait_n, time.perf_counter(), self.response)
+    
+    def flood(self, reps:int, replyTo:str, method_name:str, args:str=""):
         self.channel.basic_cancel(consumer_tag=self.basic_tag)
+        self.channel.queue_declare(queue=replyTo)
 
-        props = pika.BasicProperties(reply_to=self.callback_queue, correlation_id=self.corr_id, type=method_name)
+        props = pika.BasicProperties(reply_to=replyTo, correlation_id=self.corr_id, type=method_name)
         for _ in range(reps):
             self.channel.basic_publish(
                 exchange='',
