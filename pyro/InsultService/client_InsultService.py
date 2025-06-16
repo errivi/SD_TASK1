@@ -1,66 +1,57 @@
-import time
-import random
-import multiprocessing
 import Pyro4
+import sys
 
-_workers = []
-_NUM_GOBLINS = 1
-
-# URI format: PYRO:insultService@hostname:port
-BASE_URI = "PYRO:example.InsultServer@localhost:8000"
-
+# insults list hardcoded
 insults = [
     "clown", "blockhead", "dimwit", "nincompoop", "simpleton",
     "dullard", "buffoon", "nitwit", "half-wit", "scatterbrain",
-    "scatterbrained", "knucklehead", "dingbat", "doofus", "ninny",
-    "ignoramus", "muttonhead", "bonehead", "airhead", "puddingbrain",
-    "mushbrain", "dunderhead", "lamebrain", "numbskull", "fool",
-    "goofball", "lunkhead", "maroon", "mook", "ninnyhammer",
-    "numskull", "patzer", "sap", "scofflaw", "screwball",
-    "twit", "woozle", "yahoo", "zany"
+    "knucklehead", "dingbat", "doofus", "ninny", "ignoramus",
+    "bonehead", "airhead", "puddingbrain", "dunderhead", "numbskull",
+    "sap", "scofflaw", "screwball", "twit", "yahoo", "zany",
+    "idiot", "moron", "imbecile", "chucklehead", "lunatic",
+    "wanker", "dunce", "twerp", "asshat", "donkey"
 ]
 
-@Pyro4.expose
-class LoadTester:
-    def __init__(self, uri, goblin_id):
-        self.victim = Pyro4.Proxy(uri)
-        self.goblin_id = goblin_id
+def main():
+    try:
+        # Locate the Name Server
+        ns = Pyro4.locateNS()
+        print("[+] Name Server located.")
 
-    def run(self):
-        while True:
-            op = random.choice(["add", "get", "insult"])
-            start = time.time()
-            if op == "add":
-                self.victim.add_insult(random.choice(insults))
-            elif op == "get":
-                self.victim.get_insults()
-            else:
-                self.victim.insult_me()
-            latency = time.time() - start
-            print(f"[Goblin {self.goblin_id}] {op} took {latency:.4f}s")
+        # Get the server URI from the Name Server
+        uri = ns.lookup("example.InsultServer")
+        print(f"[+] Server found: {uri}")
+
+        # Create a proxy to the remote server
+        server = Pyro4.Proxy(uri)
+
+        # Show initial list of insults
+        print("\n[>] Initial list of insults:")
+        try:
+            current_insults = server.get_insults()
+            print(current_insults)
+        except:
+            current_insults = []
+
+        # Add some insults if the list is empty
+        if not current_insults:
+            print("\n[!] The insult list is empty. Adding default insults for testing.")
+            for insult in insults:
+                server.add_insult(insult)
+            print("[+] Default insults added.")
+        else:
+            print("\n[>] Server already has insults. Ready to go!")
+
+        # Request 5 random insults
+        print("\n[?] Receiving 5 random insults:")
+        for i in range(5):
+            print(f"Insult {i+1}: {server.insult_me()}")
+
+    except Pyro4.errors.CommunicationError as e:
+        print("[-] Communication error with server:", e)
+    except Exception as e:
+        print("[-] Error:", e)
 
 
-def spawn_goblins():
-    for i in range(_NUM_GOBLINS):
-        tester = LoadTester(BASE_URI, i)
-        p = multiprocessing.Process(target=tester.run)
-        _workers.append(p)
-        p.start()
-
-
-def kill_goblins():
-    for p in _workers:
-        if p.is_alive():
-            p.terminate()
-
-
-def fload_server(duration=3):
-    spawn_goblins()
-    time.sleep(duration)
-    kill_goblins()
-
-
-if __name__ == '__main__':
-    # Inicia el Name Server si lo necesitas:
-    # Pyro4.naming.startNSloop()
-    fload_server()
+if __name__ == "__main__":
+    main()
