@@ -7,7 +7,7 @@ _workers = []
 _NUM_GOBLINS = 1
 
 # URI format: PYRO:insultService@hostname:port
-BASE_URI = "PYRO:insultService@localhost:7999"
+BASE_URI = "PYRO:example.InsultServer@localhost:8000"
 
 insults = [
     "clown", "blockhead", "dimwit", "nincompoop", "simpleton",
