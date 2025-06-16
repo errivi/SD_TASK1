@@ -22,7 +22,7 @@ _servers = []
 
 # Test configurations
 TOTAL_NUM_REQS = 10_000
-NUM_OF_CLIENTS = 2
+NUM_OF_CLIENTS = 6
 REQS_PER_CLIENT = int(TOTAL_NUM_REQS / (NUM_OF_CLIENTS))
 
 class InsultNode:
@@ -99,7 +99,62 @@ def waitForClients():
     for w in _clients:
         w.join()
 
-if __name__=='__main__':
+def callProfile():
+    # Start initial service nodes
+    print("Spawning all the nodes...")
+    for _ in range(NUM_OF_NODES): spawn_insult_node()
+    time.sleep(2)
+    serversURIs = []
+    for node in _InsultNodeList: serversURIs.append(f'http://127.0.0.1:{node.port}')
+
+    # Testing InsultService
+    print("Filling the servers with insults...")
+    for uri in serversURIs: fillServerWithInsults(uri)
+
+    for _ in range(NUM_OF_NODES): spawn_filter_node()
+    time.sleep(2)
+
+    print("Servers ready for testing, press any key to close the servers...")
+    input()
+    time.sleep(1)
+
+    victims = [ServerProxy(uri, allow_none=True) for uri in serversURIs]
+    baseCase = [time.perf_counter for _ in serversURIs]
+    RR_uris = 0
+    maxURIs = len(victims)
+    bS, aS, bM, aM, bC, aC, BbS, BaS, BbC, BaC = 0,0,0,0,0,0,0,0,0,0
+    aux = None
+    res = None
+    for iter in range(5):
+        bS = time.perf_counter_ns()
+        aux = victims[RR_uris]
+        aS = time.perf_counter_ns()
+        bM = time.perf_counter_ns()
+        aux = aux.insult
+        aM = time.perf_counter_ns()
+        bC = time.perf_counter_ns()
+        res = aux()
+        aC = time.perf_counter_ns()
+        
+        BbS = time.perf_counter_ns()
+        aux = baseCase[RR_uris]
+        BaS = time.perf_counter_ns()
+        BbC = time.perf_counter_ns()
+        res = aux()
+        BaC = time.perf_counter_ns()
+    
+        print(f"Iter {iter} with {maxURIs} servers:\n\tReal -> aS-bS: {aS-bS}, aM-bM: {aM-bM}, aC-bC: {aC-bC}\n\tBase -> aS-bS: {BaS-BbS}, aC-bC: {BaC-BbC}\n")
+    
+        RR_uris = RR_uris + 1
+        if (RR_uris == maxURIs): RR_uris = 0
+
+    # Kill everything
+    print("Stopping all nodes...")
+    for thread in _clients: thread.kill()
+    for server in _servers: server.kill()
+    sys.exit(0)
+
+def test():
     # Start initial service nodes
     print("Spawning all the nodes...")
     for _ in range(NUM_OF_NODES): spawn_insult_node()
@@ -145,3 +200,6 @@ if __name__=='__main__':
     for thread in _clients: thread.kill()
     for server in _servers: server.kill()
     sys.exit(0)
+
+if __name__=='__main__':
+    test()
