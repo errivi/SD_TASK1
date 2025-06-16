@@ -24,29 +24,29 @@ NUM_CLIENTS = 10
 REQS_PER_CLIENT = int(TOTAL_REQS // (NUM_OF_NODES * NUM_CLIENTS))
 
 class InsultNode:
-    def __init__(self, port):
+    def __init__(self, process, port):
+        self.process = process
         self.port = port
-        self.working = False
         _InsultNodeList.append(self)
 
 class FilterNode:
-    def __init__(self, port):
+    def __init__(self, process, port):
+        self.process = process
         self.port = port
-        self.working = False
         _FilterNodeList.append(self)
 
 # Spawn an insult node on next available port
 def spawn_insult_node():
     port = BASE_INSULT_SERVER_PORT + len(_InsultNodeList)
-    subprocess.Popen([sys.executable,'InsultService/InsultServer.py',str(port)])
-    return InsultNode(port)
+    p = subprocess.Popen([sys.executable,'InsultService/InsultServer.py',str(port)])
+    return InsultNode(p, port)
 
 # Spawn a filter node linked to a specific insult node
 def spawn_filter_node():
     port = BASE_FILTER_SERVER_PORT + len(_FilterNodeList)
     insult_uri = f"PYRO:example.InsultServer@{BASE_HOST}:{BASE_INSULT_SERVER_PORT}"
-    subprocess.Popen([sys.executable,'InsultFilter/InsultFilterServer.py',insult_uri,str(port)])
-    return FilterNode(port)
+    p = subprocess.Popen([sys.executable,'InsultFilter/InsultFilterServer.py',insult_uri,str(port)])
+    return FilterNode(p, port)
 
 # Fill the server with insults for the test
 def fillServerWithInsults(uri):
@@ -142,6 +142,6 @@ if __name__ == '__main__':
 
     # Kill everything
     print("Stopping all nodes...")
-    for p in _clients:
-        p.terminate()
+    for p in _clients: p.terminate()
+    for n in (_InsultNodeList + _FilterNodeList): n.process.terminate()
     sys.exit(0)
