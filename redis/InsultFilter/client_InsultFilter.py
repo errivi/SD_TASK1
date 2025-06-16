@@ -1,8 +1,4 @@
-# filter_client.py
-#!/usr/bin/env python3
 import redis
-import threading
-import time
 import json
 
 texts_to_filter = [
@@ -31,7 +27,6 @@ class RedisFilterClient:
         _, raw = self.r.brpop(RESPONSE_QUEUE)
         response = json.loads(raw)
         filtered = response.get('filtered')
-        print(f"filter_text() -> {filtered}")
         return filtered
 
     def get_filtered(self):
