@@ -4,13 +4,12 @@ import time
 import random
 import Pyro4
 
-
+# Usage: python InsultServer.py [port]
 if len(sys.argv) > 1:
     insultServerPort = int(sys.argv[1])
 else:
     insultServerPort = 8000
 BASE_HOST = '127.0.0.1'
-LOAD_BALANCER_URI = f"PYRO:LoadBalancer@{BASE_HOST}:7999"
 
 @Pyro4.expose
 @Pyro4.behavior(instance_mode="single")
@@ -21,7 +20,6 @@ class InsultServer:
         self.lost_subscribers = {}
         self.lock = threading.Lock()
         self.abort_flag = threading.Event()
-        # Start broadcast thread
         threading.Thread(target=self._broadcaster, daemon=True).start()
 
     def add_insult(self, insult):
@@ -32,24 +30,17 @@ class InsultServer:
         return list(self.insults_set)
 
     def insult_me(self):
+        # Latencia artificial
         i = 0
-        for _ in range(100_000): i += 1 #Add latency to the request to mitigate not enough clients problem
-        if not self.insults_set: return "NoInsultsSaved"
+        for _ in range(100_000): i += 1
+        if not self.insults_set:
+            return "NoInsultsSaved"
         return random.choice(tuple(self.insults_set))
 
     def subscribe_insults(self, subscriber_uri):
         with self.lock:
             self.subscribers_set.add(subscriber_uri)
         return True
-
-    def remove_subscriber(self, uri):
-        with self.lock:
-            self.subscribers_set.discard(uri)
-        try:
-            lb = Pyro4.Proxy(LOAD_BALANCER_URI)
-            lb.unalive(uri)
-        except:
-            pass
 
     def _broadcaster(self):
         while not self.abort_flag.is_set():
@@ -66,27 +57,33 @@ class InsultServer:
                             count = self.lost_subscribers.get(uri, 0) + 1
                             self.lost_subscribers[uri] = count
                             if count > 1:
-                                self._remove_subscriber(uri)
+                                self.remove_subscriber(uri)
 
 if __name__ == '__main__':
-    # Init Pyro daemon & register object
     daemon = Pyro4.Daemon(host=BASE_HOST, port=insultServerPort)
+    # Intentar localizar Name Server; si falla, salimos.
     try:
         ns = Pyro4.locateNS()
-        uri = daemon.register(InsultServer)
-        ns.register("example.InsultServer", uri)
-        print(f"InsultServer registered in ns as example.InsultServer -> {uri}")
-    except Pyro4.errors.NamingError:
-        uri = daemon.register(InsultServer, objectId="example.InsultServer")
-        print(f"InsultServer available at {uri}")
+    except Exception as e:
+        print(f"ERROR: No se pudo localizar el Name Server: {e}")
+        sys.exit(1)
+
+    # Registrar el servidor en el Name Server bajo un nombre con el puerto
+    server = InsultServer()
+    objectId = "example.InsultServer"
+    uri = daemon.register(server, objectId=objectId)
+    try:
+        ns.register(objectId, uri)
+        print(f"InsultServer registrado en NS como {objectId} -> {uri}")
+    except Exception as e:
+        print(f"ERROR: No se pudo registrar en el Name Server: {e}")
+        sys.exit(1)
 
     print(f"InsultServer listening on {BASE_HOST}:{insultServerPort}")
     try:
         daemon.requestLoop()
     except KeyboardInterrupt:
         print("Stopping broadcaster & exiting...")
-        server = daemon.objectsById.get("example.InsultServer")
-        if server:
-            server.abort_flag.set()
+        server.abort_flag.set()
         daemon.shutdown()
         sys.exit(0)

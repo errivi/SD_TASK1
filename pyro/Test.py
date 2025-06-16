@@ -1,147 +1,153 @@
 import sys
 import subprocess
 import time
-import random
 import multiprocessing as mp
 import Pyro4
+import atexit
+import signal
 
+# Número de nodos InsultServer a arrancar (puede pasarse como argumento)
 NUM_OF_NODES = int(sys.argv[1]) if len(sys.argv) > 1 and int(sys.argv[1]) > 1 else 1
 
-LOAD_BALANCER_NS = "PYRONAME:LoadBalancer"
-BASE_HOST = "127.0.0.1"
 BASE_INSULT_SERVER_PORT = 8000
-BASE_FILTER_SERVER_PORT = 9000
 
-# Global lists of nodes
+# Listas globales de nodos y procesos cliente
 _InsultNodeList = []
-_FilterNodeList = []
-
 _clients = []
 
-# Test configurations
+# Para guardar procesos de servidores si queremos matarlos al final
+_server_processes = []
+nameserver_process = None
+
+# Configuración de test
 TOTAL_REQS = 10_000
-NUM_CLIENTS = 10
-REQS_PER_CLIENT = int(TOTAL_REQS // (NUM_OF_NODES * NUM_CLIENTS))
+NUM_CLIENTS = 4  # número de procesos clientes por nodo
 
 class InsultNode:
-    def __init__(self, process, port):
-        self.process = process
+    def __init__(self, port, process):
         self.port = port
+        self.process = process
         _InsultNodeList.append(self)
 
-class FilterNode:
-    def __init__(self, process, port):
-        self.process = process
-        self.port = port
-        _FilterNodeList.append(self)
-
-# Spawn an insult node on next available port
 def spawn_insult_node():
     port = BASE_INSULT_SERVER_PORT + len(_InsultNodeList)
-    p = subprocess.Popen([sys.executable,'InsultService/InsultServer.py',str(port)])
-    return InsultNode(p, port)
+    # Arranca InsultServer.py con el puerto
+    proc = subprocess.Popen([sys.executable, 'InsultService/InsultServer.py', str(port)])
+    _server_processes.append(proc)
+    return InsultNode(port, proc)
 
-# Spawn a filter node linked to a specific insult node
-def spawn_filter_node():
-    port = BASE_FILTER_SERVER_PORT + len(_FilterNodeList)
-    insult_uri = f"PYRO:example.InsultServer@{BASE_HOST}:{BASE_INSULT_SERVER_PORT}"
-    p = subprocess.Popen([sys.executable,'InsultFilter/InsultFilterServer.py',insult_uri,str(port)])
-    return FilterNode(p, port)
+def wait_for_registration(name, timeout=10.0):
+    """
+    Espera hasta que el Name Server tenga registrado el nombre 'name', o timeout segundos.
+    Retorna True si se registró, False si timeout o error.
+    """
+    try:
+        ns = Pyro4.locateNS()
+    except Exception as e:
+        print(f"Error localizando Name Server para espera de registro de '{name}': {e}")
+        return False
+    start = time.time()
+    while True:
+        try:
+            ns.lookup(name)
+            return True
+        except Pyro4.errors.NamingError:
+            if time.time() - start > timeout:
+                return False
+            time.sleep(0.2)
+        except Exception as e:
+            if time.time() - start > timeout:
+                print(f"Error al esperar registro de '{name}': {e}")
+                return False
+            time.sleep(0.2)
 
-# Fill the server with insults for the test
-def fillServerWithInsults(uri):
-    insults = ["clown", "blockhead", "dimwit", "nincompoop", "simpleton", "dullard", "buffoon", "nitwit", "half-wit", "scatterbrain", "scatterbrained", "knucklehead", "dingbat", "doofus", "ninny", "ignoramus", "muttonhead", "bonehead", "airhead", "puddingbrain", "mushbrain", "blockhead", "dunderhead", "lamebrain", "muttonhead", "numbskull", "dimwit", "dullard", "fool", "goofball", "knucklehead", "lunkhead", "maroon", "mook", "nincompoop", "ninnyhammer", "numskull", "patzer", "puddingbrain", "sap", "simpleton", "scofflaw", "screwball", "twit", "woozle", "yahoo", "zany"]
-    proxy = Pyro4.Proxy(uri)
+def fillServerWithInsults(port):
+    insults = [
+        "clown", "blockhead", "dimwit", "nincompoop", "simpleton", "dullard", "buffoon",
+        "nitwit", "half-wit", "scatterbrain", "scatterbrained", "knucklehead", "dingbat",
+        "doofus", "ninny", "ignoramus", "muttonhead", "bonehead", "airhead", "puddingbrain",
+        "mushbrain", "dunderhead", "lamebrain", "numbskull", "fool", "goofball", "lunkhead",
+        "maroon", "mook", "ninnyhammer", "numskull", "patzer", "sap", "scofflaw", "screwball",
+        "twit", "woozle", "yahoo", "zany"
+    ]
+    proxy = Pyro4.Proxy(f"PYRO:example.InsultServer@127.0.0.1:{port}")
     for ins in insults:
-        proxy.add_insult(ins)
+        try:
+            proxy.add_insult(ins)
+        except Exception as e:
+            print(f"Error al añadir insulto '{ins}' a servidor en puerto {port}: {e}")
 
-# Stress test for InsultServer
-def floadInsultServer(uri):
-    proxy = Pyro4.Proxy(uri)
-    for _ in range(REQS_PER_CLIENT):
+def floadInsultServer(name, reqs_per_client):
+    ns = Pyro4.locateNS()
+    for _ in range(reqs_per_client):
+        uri = ns.lookup(name)
+        proxy = Pyro4.Proxy(uri)
         proxy.insult_me()
 
-# Stress test for FilterServer
-def floadFilterServer(uri):
-    proxy = Pyro4.Proxy(uri)
-    phrases = ["You absolute buffoon, always acting like a total clown and making everyone around you cringe with your dimwit antics, you complete nincompoop who can't even tie his own shoelaces.",
-            "Honestly, you're such a dullard and a nitwit that it's amazing you manage to breathe without causing some sort of catastrophe, you half-witted scatterbrain with the intelligence of a turnip.",
-            "Listening to your stupidity is like hearing a bunch of buffoons trying to solve a simple problem, you knuckleheaded doofus who never learns from their idiotic mistakes, you utter ninny.",
-            "You dimwit, you clueless nincompoop, your brain is so mushy and pudding-like that I wonder how you even function in everyday life, you scatterbrained fool with no common sense at all.",
-            "You absolute simpleton, always acting like a total moron and never catching on to anything, you nitwit of a bonehead who seems to exist solely to embarrass himself with every word he speaks.",
-            "You complete blockhead, always stumbling through life like a buffoon and proving time and again that you're nothing more than a dullard with the mental capacity of a lizard, you utter nincompoop.",
-            "Honestly, you’re such a scatterbrained dimwit and a total ninnyhammer that I wouldn’t trust you to pour water out of a boot even if the instructions were on the heel, you doofus.",
-            "Your mind is a total mushbrain, you clueless nincompoop, and your inability to understand simple things makes you the perfect example of a bonehead and a half-wit combined, you ignoramus.",
-            "Listening to your nonsense is like hearing a bunch of fools trying to solve a puzzle with half the pieces missing, you knuckleheaded nitwit who’s always a step behind everyone else, you maroon.",
-            "You are a hopeless simpleton and a true scatterbrained fool, a dullard who manages to bungle basic tasks and make a fool of himself every time you open your mouth, you ninnyhammer.",
-            "Pardon my intromission, gentleman, but I must request you to empty the compartments of your pantaloons."
-    ]
-    for _ in range(REQS_PER_CLIENT):
-        proxy.filter_text(random.choice(phrases))
+def spawnClients(name, func, reqs_per_client):
+    for _ in range(NUM_CLIENTS):
+        p = mp.Process(target=func, args=(name,reqs_per_client))
+        _clients.append(p)
+        p.start()
 
-# Spawn clients passing the function, not calling it
-def spawnClients(ports, func):
-    for port in ports:
-        # Determine URI depending function
-        if func is floadInsultServer:
-            uri = f"PYRO:example.InsultServer@{BASE_HOST}:{port}"
-        else:
-            uri = f"PYRO:example.InsultFilterServer@{BASE_HOST}:{port}"
-        for _ in range(NUM_CLIENTS):
-            p = mp.Process(target=func, args=(uri,))
-            _clients.append(p)
-            p.start()
-
-# Wait for all clients
 def waitForClients():
     for p in _clients:
         p.join()
 
+def terminate_all():
+    # Terminar procesos cliente
+    for p in _clients:
+        if p.is_alive():
+            p.terminate()
+    # Terminar procesos de servidor
+    for proc in _server_processes:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+    # Terminar Name Server si sigue vivo
+    global nameserver_process
+    try:
+        if nameserver_process and nameserver_process.poll() is None:
+            nameserver_process.terminate()
+    except Exception:
+        pass
+
 if __name__ == '__main__':
-    # Start initial service nodes
-    print("Spawning all the nodes...")
+    print("Starting Pyro Name Server...")
+    nameserver_process = subprocess.Popen(
+        [sys.executable, "-m", "Pyro4.naming"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+    atexit.register(terminate_all)
+    signal.signal(signal.SIGINT, lambda signum, frame: sys.exit(0))
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
+
+    # Dar tiempo al Name Server a arrancar
+    time.sleep(2)
+
+    # Arrancar nodos InsultServer
+    print("Spawning all the insult nodes...")
     for _ in range(NUM_OF_NODES): spawn_insult_node()
-    time.sleep(2)
 
-    # Testing InsultService
+    # Calcular peticiones por cliente
+    REQS_PER_CLIENT = int(TOTAL_REQS // (NUM_CLIENTS))
+
+    # Test InsultService
     print("Filling the servers with insults...")
-    for node in _InsultNodeList:
-        uri = f"PYRO:example.InsultServer@{BASE_HOST}:{node.port}"
-        fillServerWithInsults(uri)
+    for node in _InsultNodeList: fillServerWithInsults(node.port)
 
-    print("Starting Insult test... (making every client do ", REQS_PER_CLIENT, " reqs)")
-    listOfPorts = []
-    for node in _InsultNodeList: listOfPorts.append(node.port)
-
+    print(f"Starting Insult test... (making every client do {REQS_PER_CLIENT} reqs)")
     delta = time.time()
-    spawnClients(listOfPorts, floadInsultServer)
+    spawnClients("example.InsultServer", floadInsultServer, REQS_PER_CLIENT)
     waitForClients()
     delta = time.time() - delta
 
     print("Test finished.")
-    reqs = len(listOfPorts) * NUM_CLIENTS * REQS_PER_CLIENT
-    print("RES: Made ", reqs, " reqs in ", delta, " secs. Got ", (reqs/delta), " reqs/s")
+    reqs = NUM_CLIENTS * REQS_PER_CLIENT
+    print(f"RES: Made {reqs} reqs in {delta:.2f} secs. Got {reqs/delta:.2f} reqs/s")
 
-    # Spawning initial filter nodes
-    for _ in range(NUM_OF_NODES): spawn_filter_node()
-    time.sleep(2)
-
-    # Testing InsultFilter
-    print("Starting Filter test... (making every client do ", REQS_PER_CLIENT, " reqs)")
-    listOfPorts = []
-    for node in _FilterNodeList: listOfPorts.append(node.port)
-
-    delta = time.time()
-    spawnClients(listOfPorts, floadFilterServer)
-    waitForClients()
-    delta = time.time() - delta
-
-    print("Test finished.")
-    reqs = len(listOfPorts) * NUM_CLIENTS * REQS_PER_CLIENT
-    print("RES: Made ", reqs, " reqs in ", delta, " secs. Got ", (reqs/delta), " reqs/s")
-
-    # Kill everything
-    print("Stopping all nodes...")
-    for p in _clients: p.terminate()
-    for n in (_InsultNodeList + _FilterNodeList): n.process.terminate()
+    print("Stopping all clients and servers...")
+    terminate_all()
     sys.exit(0)
