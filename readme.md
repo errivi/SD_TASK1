@@ -28,17 +28,22 @@ To run all code with no problems you must check the middleware versions that you
  
 ## Usage
 
-To run the architecture implemented you must follow the next steps:
-    - XML-RPC:
-      1. By CLI execute Test.py with the number of nodes wanted.
-    - Pyro:
-      1. By CLI execute Test.py with the number of nodes wanted.
-    - Redis:
-      1. Get the redis container on Docker and set up default port 6379 or custom (you must change it in code).
-      2. By CLI execute Test.py with the number of nodes wanted.
-    - RabbitMQ:
-      1. Get the rabbitmq container on Docker and set up default port 6379 or custom (you must change it in code).
-      2. By CLI execute Test.py with the number of nodes wanted.
+To run the implemented architecture, follow the steps for each middleware:
+
+- **XML-RPC:**
+  1. Execute `Test.py` via CLI, specifying the desired number of nodes.
+
+- **Pyro:**
+  1. Execute `Test.py` via CLI, specifying the desired number of nodes.
+
+- **Redis:**
+  1. Start the Redis container in Docker and set the default port (6379) or a custom one (modify in the code).
+  2. Execute `Test.py` via CLI, specifying the desired number of nodes.
+
+- **RabbitMQ:**
+  1. Start the RabbitMQ container in Docker and set the default port (6379) or a custom one (modify in the code).
+  2. Execute `Test.py` via CLI, specifying the desired number of nodes.
+
 
 ## Examples
 
